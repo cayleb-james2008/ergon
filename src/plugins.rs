@@ -1042,8 +1042,11 @@ fn resolve_plugin_json(
     spec: &PluginSpec,
     setting: &PluginPersonSetting,
     cloud_match: Option<&CloudMatch>,
+    oauth_provider: Option<&'static str>,
+    oauth_label: Option<&str>,
 ) -> Value {
-    let cloud_connected = cloud_match.is_some();
+    let oauth_connected = oauth_label.is_some();
+    let cloud_connected = cloud_match.is_some() || oauth_connected;
     let effective_mode = match setting.preferred_mode.as_str() {
         "local" if spec.local_ready => "local",
         "cloud" => "cloud",
@@ -1072,7 +1075,7 @@ fn resolve_plugin_json(
         "enabled_needs_auth"
     };
 
-    let connected_via = cloud_match.and_then(|m| {
+    let connector_via = cloud_match.and_then(|m| {
         match (m.connector_name.as_deref(), m.trigger_name.as_deref()) {
             (Some(c), Some(t)) => Some(format!("{c} + {t}")),
             (Some(c), None) => Some(c.to_string()),
@@ -1080,6 +1083,12 @@ fn resolve_plugin_json(
             (None, None) => None,
         }
     });
+    let connected_via = match (oauth_label, connector_via) {
+        (Some(o), Some(c)) => Some(format!("{o} · {c}")),
+        (Some(o), None) => Some(o.to_string()),
+        (None, Some(c)) => Some(c),
+        (None, None) => None,
+    };
 
     json!({
         "id": spec.id,
@@ -1097,6 +1106,8 @@ fn resolve_plugin_json(
         "effective_mode": effective_mode,
         "status": status,
         "cloud_connected": cloud_connected,
+        "oauth_provider": oauth_provider,
+        "oauth_connected": oauth_connected,
         "connected_via": connected_via,
         "linked_connector_id": cloud_match.and_then(|m| m.connector_id.clone()),
         "linked_trigger_id": cloud_match.and_then(|m| m.trigger_id.clone()),
@@ -1114,6 +1125,9 @@ pub fn list_plugins_json(person_data_dir: &Path) -> Value {
         .map(|a| a.iter().filter(|s| s["enabled"].as_bool() == Some(true)).count())
         .unwrap_or(0);
 
+    let google_label = crate::plugin_cloud::connected_account_label(person_data_dir, "google");
+    let ms_label = crate::plugin_cloud::connected_account_label(person_data_dir, "microsoft");
+
     let store = with_plugins_lock(|| PluginsStore::load_unlocked(person_data_dir));
     let mut plugins = Vec::with_capacity(CATALOG.len());
     let mut enabled_count = 0usize;
@@ -1127,7 +1141,13 @@ pub fn list_plugins_json(person_data_dir: &Path) -> Value {
             updated_ms: 0,
         });
         let cm = detect_cloud_match(spec, &connectors_snap, mcp_len);
-        let entry = resolve_plugin_json(spec, &setting, cm.as_ref());
+        let oauth_prov = crate::plugin_cloud::provider_for_plugin(spec.id);
+        let oauth_lbl = match oauth_prov {
+            Some("google") => google_label.as_deref(),
+            Some("microsoft") => ms_label.as_deref(),
+            _ => None,
+        };
+        let entry = resolve_plugin_json(spec, &setting, cm.as_ref(), oauth_prov, oauth_lbl);
         if entry["enabled"].as_bool() == Some(true) {
             enabled_count += 1;
         }
@@ -1274,14 +1294,31 @@ pub fn execute_plugin_action(
         .cloned()
         .unwrap_or_else(|| json!({}));
     let cloud_connected = current["cloud_connected"].as_bool() == Some(true);
+    let oauth_connected = current["oauth_connected"].as_bool() == Some(true);
     let preferred = current["preferred_mode"].as_str().unwrap_or("auto");
 
-    let is_local_draft = act_spec.name == "draft_reply";
+    let is_local_only_action = matches!(
+        act_spec.name,
+        "draft_reply"
+            | "build_sheet"
+            | "export_xlsx"
+            | "read_document"
+            | "draft_document"
+            | "export_docx_pdf"
+            | "draft_doc"
+            | "reconcile_sheet"
+            | "draft_outline"
+            | "list_workspace"
+            | "search_files"
+            | "watch_folder_status"
+            | "list_mcp_tools"
+            | "list_clients"
+    );
     let resolved_mode: &'static str = match mode_override.unwrap_or(preferred) {
         "local" => {
-            if !spec.local_ready && !is_local_draft {
+            if !spec.local_ready && act_spec.name != "draft_reply" {
                 return Err(format!(
-                    "{} does not have an offline local mode; enable Cloud / Connect in Connectors first.",
+                    "{} does not have an offline local mode; Sign in with OAuth2 or configure Connectors first.",
                     spec.name
                 ));
             }
@@ -1289,9 +1326,11 @@ pub fn execute_plugin_action(
         }
         "cloud" => "cloud",
         _ => {
-            if cloud_connected && !spec.local_ready && !is_local_draft {
+            if is_local_only_action {
+                "local"
+            } else if oauth_connected || (cloud_connected && !spec.local_ready) {
                 "cloud"
-            } else if spec.local_ready || is_local_draft {
+            } else if spec.local_ready {
                 "local"
             } else {
                 "cloud"
@@ -1337,8 +1376,11 @@ pub fn execute_plugin_action(
         ));
     }
 
-    // Read / non-consequential actions: run locally on-device or route via configured connector.
+    // Read / non-consequential actions: run locally on-device or route via native OAuth REST / configured connector.
     if resolved_mode == "cloud" {
+        if let Some(out) = crate::plugin_cloud::execute_native_cloud_action(cfg, spec.id, act_spec.name, args)? {
+            return Ok((out, "cloud"));
+        }
         if let Some(trig_id) = current["linked_trigger_id"].as_str() {
             if act_spec.name == "read_inbox" || act_spec.name == "triage_threads" {
                 let events = connectors::poll_imap_trigger_now(cfg, trig_id)?;
@@ -1377,7 +1419,7 @@ pub fn execute_plugin_action(
             }
         }
         return Err(format!(
-            "{} is not connected to a live cloud credential yet. Open Plugins -> Connect to configure its OAuth2 / mail preset.",
+            "{} is not connected to a live cloud account yet. Open Plugins -> Sign in with OAuth2 or configure a Connector.",
             spec.name
         ));
     }
@@ -1506,8 +1548,19 @@ pub fn settle_plugin_action_decision(cfg: &Config, decision: &Value, approved: b
     if !approved {
         return format!("You said no — {plugin_name} · {action_label} was cancelled.");
     }
-    let linked_conn = decision["linked_connector_id"].as_str().unwrap_or("");
+    let plugin_id = decision["plugin_id"].as_str().unwrap_or("");
+    let action = decision["action"].as_str().unwrap_or("");
     let args = &decision["args"];
+    match crate::plugin_cloud::execute_native_cloud_action(cfg, plugin_id, action, args) {
+        Ok(Some(out)) => {
+            return format!("Approved & executed {plugin_name} · {action_label}: {out}");
+        }
+        Ok(None) => {}
+        Err(e) => {
+            return format!("Approved {plugin_name} · {action_label}, but cloud delivery returned: {e}");
+        }
+    }
+    let linked_conn = decision["linked_connector_id"].as_str().unwrap_or("");
     let tid = decision["thread_id"].as_str().unwrap_or("");
     if !linked_conn.is_empty() {
         match connectors::invoke_connector(cfg, linked_conn, args, None, tid) {

@@ -556,6 +556,25 @@ function WorkspaceApp({
     void refreshPluginsCount();
   }, [refreshPluginsCount]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get("plugin_connected");
+    const oauthErr = params.get("plugin_oauth_error");
+    if (!connected && !oauthErr) return;
+    if (connected) {
+      const label = connected === "google" ? "Google Workspace" : connected === "microsoft" ? "Microsoft 365 & Outlook" : connected;
+      toast.success(`Connected ${label} to your agent plugins.`);
+      void refreshPluginsCount();
+    } else if (oauthErr) {
+      toast.error(oauthErr);
+    }
+    params.delete("plugin_connected");
+    params.delete("plugin_oauth_error");
+    const qs = params.toString();
+    const cleanUrl = `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`;
+    window.history.replaceState({}, "", cleanUrl);
+  }, [refreshPluginsCount]);
+
   const dateLabel = paper.data?.brief.date || new Date().toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",

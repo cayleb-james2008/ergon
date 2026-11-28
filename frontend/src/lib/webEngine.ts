@@ -8041,13 +8041,59 @@ const WEB_DEFAULT_PLUGINS: Array<
   { id: "local-mcp-bridge", suite: "local", suite_label: "On-Device Local", name: "Local Apps & MCP Bridge", tagline: "Connect any desktop CLI, database, or MCP server", description: "Active by default on-device: discovers stdio and HTTP MCP tools with optional /phone approval gates.", mode: "local", transport: "mcp", local_ready: true, default_enabled: true, actions: [{ name: "list_mcp_tools", label: "List MCP tools", description: "List local MCP tools.", access: "read", requires_approval: false }] },
 ];
 
+function oauthProviderForWebPlugin(id: string): "google" | "microsoft" | null {
+  if (id.startsWith("google-")) return "google";
+  if (["outlook-mail", "outlook-calendar", "onedrive-sharepoint", "microsoft-teams", "office-excel"].includes(id)) {
+    return "microsoft";
+  }
+  return null;
+}
+
+function getWebOAuthConnections(st: PersonStore): Record<string, { email: string; name: string; connected_at_ms: number }> {
+  const holder = st as unknown as {
+    pluginOAuthConnected?: Record<string, { email: string; name: string; connected_at_ms: number }>;
+  };
+  if (!holder.pluginOAuthConnected) holder.pluginOAuthConnected = {};
+  return holder.pluginOAuthConnected;
+}
+
+function listWebOAuthSuites(st: PersonStore) {
+  const conns = getWebOAuthConnections(st);
+  const origin = typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1";
+  const make = (provider: "google" | "microsoft") => {
+    const c = conns[provider];
+    const isGoogle = provider === "google";
+    return {
+      provider,
+      label: isGoogle ? "Google Workspace" : "Microsoft 365 & Outlook",
+      configured: true,
+      source: "demo" as const,
+      client_id: isGoogle ? "demo-google-client.apps.googleusercontent.com" : "demo-microsoft-client-id",
+      has_client_secret: false,
+      tenant: isGoogle ? null : "common",
+      scopes: isGoogle ? "gmail calendar drive docs sheets slides" : "Mail.ReadWrite Calendars.ReadWrite Files.ReadWrite",
+      redirect_uri: `${origin}/api/plugins/oauth/callback`,
+      connected: Boolean(c),
+      account_email: c?.email ?? null,
+      account_name: c?.name ?? null,
+      expires_at_ms: c ? c.connected_at_ms + 3600_000 : null,
+      connected_at_ms: c?.connected_at_ms ?? null,
+      plugin_ids: WEB_DEFAULT_PLUGINS.filter((p) => oauthProviderForWebPlugin(p.id) === provider).map((p) => p.id),
+    };
+  };
+  return { suites: [make("google"), make("microsoft")] };
+}
+
 function resolveWebPlugins(st: PersonStore): { plugins: PluginSpecItem[]; summary: { total: number; enabled_count: number; local_active: number; cloud_connected: number } } {
   const bag = (st as unknown as { pluginSettings?: Record<string, { enabled: boolean; preferred_mode: "auto" | "local" | "cloud" }> }).pluginSettings ?? {};
   const cs = ensureWebConnectors(st);
+  const oauthConns = getWebOAuthConnections(st);
   const plugins: PluginSpecItem[] = WEB_DEFAULT_PLUGINS.map((spec) => {
     const s = bag[spec.id] ?? { enabled: spec.default_enabled, preferred_mode: "auto" as const };
     const matchedConn = cs.outbound.find((c) => c.enabled && (c.url.includes(spec.id.split("-")[0]) || (spec.id === "outlook-mail" && c.smtp_config?.host?.includes("office365")) || (spec.id === "google-gmail" && c.smtp_config?.host?.includes("gmail"))));
-    const cloudConnected = Boolean(matchedConn) || (spec.id === "local-mcp-bridge" && (st.mcpServers ?? []).some((m) => Boolean(m.enabled)));
+    const oauthProv = oauthProviderForWebPlugin(spec.id);
+    const oauthConn = oauthProv ? oauthConns[oauthProv] : undefined;
+    const cloudConnected = Boolean(matchedConn) || Boolean(oauthConn) || (spec.id === "local-mcp-bridge" && (st.mcpServers ?? []).some((m) => Boolean(m.enabled)));
     const effective_mode: PluginSpecItem["effective_mode"] =
       s.preferred_mode === "local" && spec.local_ready
         ? "local"
@@ -8070,6 +8116,8 @@ function resolveWebPlugins(st: PersonStore): { plugins: PluginSpecItem[]; summar
             : spec.local_ready
               ? "active_local"
               : "enabled_needs_auth";
+    const suiteLabel = oauthProv === "google" ? "Google Workspace" : "Microsoft 365 & Outlook";
+    const connectedVia = oauthConn ? `${suiteLabel} (${oauthConn.email})` : matchedConn ? matchedConn.name : null;
     return {
       ...spec,
       enabled: s.enabled || cloudConnected,
@@ -8077,7 +8125,9 @@ function resolveWebPlugins(st: PersonStore): { plugins: PluginSpecItem[]; summar
       effective_mode,
       status,
       cloud_connected: cloudConnected,
-      connected_via: matchedConn ? matchedConn.name : null,
+      oauth_provider: oauthProv,
+      oauth_connected: Boolean(oauthConn),
+      connected_via: connectedVia,
       linked_connector_id: matchedConn?.id ?? null,
       connect_preset: spec.transport === "smtp_imap_xoauth2" || spec.transport === "oauth2_rest" || spec.transport === "mcp" ? { connector_tab: spec.transport === "mcp" ? "mcp" : "outbound" } : null,
     };
@@ -8095,6 +8145,28 @@ function resolveWebPlugins(st: PersonStore): { plugins: PluginSpecItem[]; summar
 
     if (method === "GET" && path === "/api/library") return jsonRes({ items: state.library });
     if (method === "GET" && path === "/api/plugins") return jsonRes(resolveWebPlugins(st));
+    if (method === "GET" && path === "/api/plugins/oauth/apps") return jsonRes(listWebOAuthSuites(st));
+    if ((method === "PUT" || method === "POST") && path === "/api/plugins/oauth/apps") {
+      return jsonRes(listWebOAuthSuites(st));
+    }
+    if ((method === "POST" || method === "GET") && path === "/api/plugins/oauth/start") {
+      const prov = String(body.provider ?? "google") === "microsoft" ? "microsoft" : "google";
+      const conns = getWebOAuthConnections(st);
+      conns[prov] = {
+        email: prov === "google" ? "demo.user@gmail.com" : "demo.user@outlook.com",
+        name: "Demo Workspace User",
+        connected_at_ms: Date.now(),
+      };
+      await persist();
+      return jsonRes({ ok: true, demo_connected: true, provider: prov });
+    }
+    if (method === "POST" && path === "/api/plugins/oauth/disconnect") {
+      const prov = String(body.provider ?? "").trim();
+      const conns = getWebOAuthConnections(st);
+      delete conns[prov];
+      await persist();
+      return jsonRes(listWebOAuthSuites(st));
+    }
     if (method === "POST" && path === "/api/plugins/toggle") {
       const id = String(body.plugin_id ?? "").trim();
       const spec = WEB_DEFAULT_PLUGINS.find((p) => p.id === id);

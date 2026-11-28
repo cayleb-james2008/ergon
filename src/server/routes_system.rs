@@ -925,6 +925,191 @@ pub(super) fn try_route_system(
                 }
             }
         }
+        ("GET", "/api/plugins/oauth/apps") => {
+            let scheme = if tls_enabled { "https" } else { "http" };
+            let host = req.host.as_deref().unwrap_or("127.0.0.1");
+            let origin = format!("{scheme}://{host}");
+            respond_json(
+                stream,
+                200,
+                &crate::plugin_cloud::list_oauth_suites_json(
+                    &root_cfg.data_dir,
+                    &runtime.cfg.data_dir,
+                    &origin,
+                ),
+            )
+        }
+        ("PUT" | "POST", "/api/plugins/oauth/apps") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            match crate::plugin_cloud::save_oauth_app_config(&root_cfg.data_dir, &parsed) {
+                Ok(()) => {
+                    let scheme = if tls_enabled { "https" } else { "http" };
+                    let host = req.host.as_deref().unwrap_or("127.0.0.1");
+                    let origin = format!("{scheme}://{host}");
+                    respond_json(
+                        stream,
+                        200,
+                        &crate::plugin_cloud::list_oauth_suites_json(
+                            &root_cfg.data_dir,
+                            &runtime.cfg.data_dir,
+                            &origin,
+                        ),
+                    )
+                }
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("GET" | "POST", "/api/plugins/oauth/start") => {
+            let parsed = if req.method == "POST" {
+                serde_json::from_slice::<Value>(&req.body).unwrap_or(Value::Null)
+            } else {
+                Value::Null
+            };
+            let provider = parsed["provider"]
+                .as_str()
+                .map(str::to_string)
+                .or_else(|| query_param(&req.query, "provider"))
+                .unwrap_or_default();
+            let return_to = parsed["return_to"]
+                .as_str()
+                .map(str::to_string)
+                .or_else(|| query_param(&req.query, "return_to"))
+                .unwrap_or_else(|| "/".to_string());
+            let scheme = if tls_enabled { "https" } else { "http" };
+            let host = req.host.as_deref().unwrap_or("127.0.0.1");
+            let origin = format!("{scheme}://{host}");
+            match crate::plugin_cloud::start_oauth_flow(
+                &root_cfg.data_dir,
+                &person.id,
+                &runtime.cfg.data_dir,
+                &provider,
+                &origin,
+                &return_to,
+            ) {
+                Ok(auth_url) => {
+                    if req.method == "POST"
+                        || query_param(&req.query, "json").as_deref() == Some("1")
+                    {
+                        respond_json(
+                            stream,
+                            200,
+                            &json!({ "ok": true, "authorization_url": auth_url }),
+                        )
+                    } else {
+                        respond_h(
+                            stream,
+                            302,
+                            "text/plain; charset=utf-8",
+                            "",
+                            &[("Location", auth_url)],
+                        )
+                    }
+                }
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("GET", "/api/plugins/oauth/callback") => {
+            if let Some(err) = query_param(&req.query, "error").filter(|s| !s.is_empty()) {
+                let desc = query_param(&req.query, "error_description").unwrap_or_default();
+                let msg = if desc.is_empty() {
+                    format!("OAuth sign-in rejected: {err}")
+                } else {
+                    format!("OAuth sign-in rejected: {err} ({desc})")
+                };
+                if query_param(&req.query, "json").as_deref() == Some("1") {
+                    return Some(respond_err(stream, 400, &msg));
+                }
+                let loc = format!(
+                    "/?plugin_oauth_error={}",
+                    crate::auth::url_encode_component(&msg)
+                );
+                return Some(respond_h(
+                    stream,
+                    302,
+                    "text/plain; charset=utf-8",
+                    "",
+                    &[("Location", loc)],
+                ));
+            }
+            let code = query_param(&req.query, "code").unwrap_or_default();
+            let state_param = query_param(&req.query, "state").unwrap_or_default();
+            let session_pid = principal.map(|p| p.active_person_id.as_str());
+            match crate::plugin_cloud::complete_oauth_callback(
+                &root_cfg.data_dir,
+                &code,
+                &state_param,
+                session_pid,
+            ) {
+                Ok((provider, account_email, return_to)) => {
+                    if query_param(&req.query, "json").as_deref() == Some("1") {
+                        respond_json(
+                            stream,
+                            200,
+                            &json!({
+                                "ok": true,
+                                "provider": provider,
+                                "account_email": account_email,
+                                "return_to": return_to,
+                            }),
+                        )
+                    } else {
+                        let sep = if return_to.contains('?') { '&' } else { '?' };
+                        let loc = format!(
+                            "{return_to}{sep}plugin_connected={}",
+                            crate::auth::url_encode_component(&provider)
+                        );
+                        respond_h(
+                            stream,
+                            302,
+                            "text/plain; charset=utf-8",
+                            "",
+                            &[("Location", loc)],
+                        )
+                    }
+                }
+                Err((status, msg)) => {
+                    if query_param(&req.query, "json").as_deref() == Some("1") {
+                        respond_err(stream, status, &msg)
+                    } else {
+                        let loc = format!(
+                            "/?plugin_oauth_error={}",
+                            crate::auth::url_encode_component(&msg)
+                        );
+                        respond_h(
+                            stream,
+                            302,
+                            "text/plain; charset=utf-8",
+                            "",
+                            &[("Location", loc)],
+                        )
+                    }
+                }
+            }
+        }
+        ("POST", "/api/plugins/oauth/disconnect") => {
+            let parsed: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+            let provider = parsed["provider"].as_str().unwrap_or("");
+            match crate::plugin_cloud::disconnect_provider(&runtime.cfg.data_dir, provider) {
+                Ok(()) => {
+                    let scheme = if tls_enabled { "https" } else { "http" };
+                    let host = req.host.as_deref().unwrap_or("127.0.0.1");
+                    let origin = format!("{scheme}://{host}");
+                    respond_json(
+                        stream,
+                        200,
+                        &crate::plugin_cloud::list_oauth_suites_json(
+                            &root_cfg.data_dir,
+                            &runtime.cfg.data_dir,
+                            &origin,
+                        ),
+                    )
+                }
+                Err(e) => respond_err(stream, 400, &e),
+            }
+        }
         ("GET", "/api/suite") => {
             let lib = state.library.lock().unwrap();
             let suite = library::load_suite(&runtime.cfg.data_dir);

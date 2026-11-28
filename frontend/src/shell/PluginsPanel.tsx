@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Cloud, Cpu, Layers, Play, Plug, Search, ShieldCheck } from "lucide-react";
+import { Check, Cloud, Copy, Cpu, KeyRound, Layers, LogOut, Play, Plug, Search, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { PanelModal } from "@/shell/PanelModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
+  disconnectPluginOAuth,
+  listPluginOAuthSuites,
   listPlugins,
   runPluginAction,
+  savePluginOAuthApp,
+  startPluginOAuth,
   togglePlugin,
+  type PluginOAuthSuite,
   type PluginSpecItem,
 } from "@/lib/api";
 
@@ -59,25 +64,35 @@ export function PluginsPanel({
   onChanged?: (enabledCount: number) => void;
 }) {
   const [plugins, setPlugins] = useState<PluginSpecItem[]>([]);
+  const [suites, setSuites] = useState<PluginOAuthSuite[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [suite, setSuite] = useState<SuiteFilter>("all");
   const [modeFilter, setModeFilter] = useState<ModeFilter>("all");
   const [query, setQuery] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [oauthBusy, setOauthBusy] = useState<string | null>(null);
+  const [editingSuite, setEditingSuite] = useState<"google" | "microsoft" | null>(null);
+  const [clientIdDraft, setClientIdDraft] = useState("");
+  const [clientSecretDraft, setClientSecretDraft] = useState("");
+  const [tenantDraft, setTenantDraft] = useState("common");
+  const [copiedUri, setCopiedUri] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setErr("");
     try {
-      const r = await listPlugins();
+      const [r, oauthRes] = await Promise.all([listPlugins(), listPluginOAuthSuites()]);
       if (!r.ok) {
         setErr(r.error || "Could not load the plugin library.");
         return;
       }
       setPlugins(r.data.plugins);
       onChanged?.(r.data.summary.enabled_count);
+      if (oauthRes.ok) {
+        setSuites(oauthRes.data.suites);
+      }
     } finally {
       setLoading(false);
     }
@@ -108,6 +123,14 @@ export function PluginsPanel({
     const cloudCount = plugins.filter((p) => p.cloud_connected).length;
     return { total: plugins.length, enabledCount, localCount, cloudCount };
   }, [plugins]);
+
+  const suiteByProvider = useMemo(() => {
+    const map: Partial<Record<"google" | "microsoft", PluginOAuthSuite>> = {};
+    for (const s of suites) {
+      map[s.provider] = s;
+    }
+    return map;
+  }, [suites]);
 
   const handleToggle = async (p: PluginSpecItem) => {
     setBusyId(p.id);
@@ -144,8 +167,14 @@ export function PluginsPanel({
     if (!readAction) return;
     setBusyId(p.id);
     try {
+      const preferred =
+        p.cloud_connected && p.preferred_mode !== "local"
+          ? "cloud"
+          : p.local_ready && !p.cloud_connected
+            ? "local"
+            : undefined;
       const r = await runPluginAction(p.id, readAction.name, {
-        mode: p.local_ready && !p.cloud_connected ? "local" : undefined,
+        mode: preferred,
       });
       if (!r.ok) {
         toast.error(r.error || `${p.name} returned an error.`);
@@ -156,6 +185,87 @@ export function PluginsPanel({
     } finally {
       setBusyId(null);
     }
+  };
+
+  const handleOAuthConnect = async (provider: "google" | "microsoft") => {
+    setOauthBusy(provider);
+    try {
+      const r = await startPluginOAuth(provider, "/");
+      if (!r.ok) {
+        toast.error(r.error || `Could not start ${provider} OAuth2 sign-in.`);
+        return;
+      }
+      if (r.data.demo_connected) {
+        await refresh();
+        toast.success(
+          provider === "google"
+            ? "Connected Google Workspace (demo) to your agent."
+            : "Connected Microsoft 365 & Outlook (demo) to your agent."
+        );
+        return;
+      }
+      if (r.data.authorization_url) {
+        window.location.assign(r.data.authorization_url);
+      }
+    } finally {
+      setOauthBusy(null);
+    }
+  };
+
+  const handleOAuthDisconnect = async (provider: "google" | "microsoft") => {
+    setOauthBusy(provider);
+    try {
+      const r = await disconnectPluginOAuth(provider);
+      if (!r.ok) {
+        toast.error(r.error || "Could not disconnect OAuth2 account.");
+        return;
+      }
+      await refresh();
+      toast.success(
+        provider === "google" ? "Disconnected Google Workspace." : "Disconnected Microsoft 365 & Outlook."
+      );
+    } finally {
+      setOauthBusy(null);
+    }
+  };
+
+  const openOAuthEditor = (s: PluginOAuthSuite) => {
+    setEditingSuite(s.provider);
+    setClientIdDraft(s.client_id || "");
+    setClientSecretDraft("");
+    setTenantDraft(s.tenant || "common");
+  };
+
+  const handleSaveOAuthApp = async (provider: "google" | "microsoft") => {
+    if (!clientIdDraft.trim()) {
+      toast.error("Client ID is required.");
+      return;
+    }
+    setOauthBusy(provider);
+    try {
+      const r = await savePluginOAuthApp({
+        provider,
+        client_id: clientIdDraft.trim(),
+        ...(clientSecretDraft.trim() ? { client_secret: clientSecretDraft.trim() } : {}),
+        ...(provider === "microsoft" ? { tenant: tenantDraft.trim() || "common" } : {}),
+      });
+      if (!r.ok) {
+        toast.error(r.error || "Could not save OAuth app settings.");
+        return;
+      }
+      setEditingSuite(null);
+      setClientSecretDraft("");
+      await refresh();
+      toast.success("OAuth app saved securely. Employees can now sign in with one click.");
+    } finally {
+      setOauthBusy(null);
+    }
+  };
+
+  const copyRedirectUri = (uri: string, provider: string) => {
+    void navigator.clipboard?.writeText(uri);
+    setCopiedUri(provider);
+    setTimeout(() => setCopiedUri((cur) => (cur === provider ? null : cur)), 1600);
   };
 
   return (
@@ -192,6 +302,159 @@ export function PluginsPanel({
             </Button>
           )}
         </div>
+
+        {suites.length > 0 && (
+          <div id="plugins-oauth-strip" className="grid min-w-0 gap-2.5 md:grid-cols-2">
+            {suites.map((s) => {
+              const isBusy = oauthBusy === s.provider;
+              const isEditing = editingSuite === s.provider;
+              return (
+                <div
+                  key={s.provider}
+                  data-oauth-provider={s.provider}
+                  className="flex min-w-0 flex-col gap-2 rounded-card border border-hairline bg-surface p-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-ink">{s.label}</p>
+                      <p className="truncate text-xs text-ink-2">
+                        {s.connected
+                          ? `Signed in${s.account_email ? ` as ${s.account_email}` : ""}`
+                          : s.configured
+                            ? "One-click OAuth2 PKCE ready across 6 plugins"
+                            : canManageConnectors
+                              ? "Register your org OAuth Client ID to enable 1-click sign-in"
+                              : "Ask an admin to register OAuth; local tools work offline now"}
+                      </p>
+                    </div>
+                    <Badge
+                      variant={s.connected ? "success" : s.configured ? "secondary" : "warning"}
+                      size="sm"
+                    >
+                      {s.connected ? "Connected" : s.configured ? "Ready" : "Setup needed"}
+                    </Badge>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {s.connected ? (
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        disabled={isBusy}
+                        onClick={() => void handleOAuthDisconnect(s.provider)}
+                        className="max-md:min-h-11 gap-1"
+                      >
+                        <LogOut className="size-3" strokeWidth={1.5} aria-hidden />
+                        <span>Disconnect</span>
+                      </Button>
+                    ) : s.configured ? (
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="default"
+                        disabled={isBusy}
+                        onClick={() => void handleOAuthConnect(s.provider)}
+                        className="max-md:min-h-11 gap-1"
+                      >
+                        <KeyRound className="size-3" strokeWidth={1.5} aria-hidden />
+                        <span>{s.provider === "google" ? "Sign in with Google" : "Sign in with Microsoft"}</span>
+                      </Button>
+                    ) : null}
+
+                    {canManageConnectors && (
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant={isEditing ? "secondary" : "outline"}
+                        disabled={isBusy}
+                        onClick={() => (isEditing ? setEditingSuite(null) : openOAuthEditor(s))}
+                        className="max-md:min-h-11"
+                      >
+                        {isEditing ? "Close setup" : s.configured ? "Edit OAuth" : "Setup OAuth"}
+                      </Button>
+                    )}
+                  </div>
+
+                  {isEditing && (
+                    <div className="flex flex-col gap-2 rounded-sm border border-hairline bg-board/50 p-2.5">
+                      <div className="flex items-center gap-1.5">
+                        <Input
+                          value={s.redirect_uri}
+                          readOnly
+                          aria-label={`${s.label} Redirect URI`}
+                          className="mono h-7 flex-1 text-[11px]"
+                        />
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          onClick={() => copyRedirectUri(s.redirect_uri, s.provider)}
+                          className="max-md:min-h-11 shrink-0 gap-1"
+                        >
+                          {copiedUri === s.provider ? (
+                            <Check className="size-3" strokeWidth={1.5} aria-hidden />
+                          ) : (
+                            <Copy className="size-3" strokeWidth={1.5} aria-hidden />
+                          )}
+                          <span>{copiedUri === s.provider ? "Copied" : "Copy URI"}</span>
+                        </Button>
+                      </div>
+                      <Input
+                        value={clientIdDraft}
+                        onChange={(e) => setClientIdDraft(e.target.value)}
+                        placeholder={
+                          s.provider === "google"
+                            ? "Google OAuth Client ID (*.apps.googleusercontent.com)"
+                            : "Microsoft Entra Application (client) ID"
+                        }
+                        className="h-8 text-xs"
+                      />
+                      <Input
+                        type="password"
+                        value={clientSecretDraft}
+                        onChange={(e) => setClientSecretDraft(e.target.value)}
+                        placeholder={
+                          s.has_client_secret
+                            ? "Client Secret saved (leave blank to keep)"
+                            : "Client Secret (optional for PKCE desktop clients)"
+                        }
+                        className="h-8 text-xs"
+                      />
+                      {s.provider === "microsoft" && (
+                        <Input
+                          value={tenantDraft}
+                          onChange={(e) => setTenantDraft(e.target.value)}
+                          placeholder="Tenant ID (common, organizations, or directory GUID)"
+                          className="h-8 text-xs"
+                        />
+                      )}
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="ghost"
+                          onClick={() => setEditingSuite(null)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="default"
+                          disabled={isBusy}
+                          onClick={() => void handleSaveOAuthApp(s.provider)}
+                        >
+                          Save app
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <div className="flex flex-col gap-2">
           <div className="relative">
@@ -263,6 +526,7 @@ export function PluginsPanel({
               const st = statusLabel(p);
               const isBusy = busyId === p.id;
               const safeRead = p.actions.find((a) => !a.requires_approval && a.access === "read");
+              const oauthSuite = p.oauth_provider ? suiteByProvider[p.oauth_provider] : undefined;
               return (
                 <article
                   key={p.id}
@@ -371,7 +635,20 @@ export function PluginsPanel({
                           <span>Run</span>
                         </Button>
                       )}
-                      {p.connect_preset && !p.cloud_connected && canManageConnectors && (
+                      {oauthSuite && !oauthSuite.connected && oauthSuite.configured && (
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          disabled={oauthBusy === oauthSuite.provider}
+                          onClick={() => void handleOAuthConnect(oauthSuite.provider)}
+                          className="max-md:min-h-11 gap-1"
+                        >
+                          <KeyRound className="size-3" strokeWidth={1.5} aria-hidden />
+                          <span>Sign in</span>
+                        </Button>
+                      )}
+                      {p.connect_preset && !p.cloud_connected && (!oauthSuite || !oauthSuite.configured) && canManageConnectors && (
                         <Button
                           type="button"
                           size="xs"

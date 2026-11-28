@@ -42,9 +42,9 @@ Every employee gets an isolated workspace, phone-first Approve/Deny triage, sand
 
 ## Why Ergon
 
-Instead of wiring together a Node/Python server, Postgres, Redis, and background workers just to run internal agents safely, Ergon compiles into **one static binary** (`11.62 MiB` on Linux) serving desktop (`/`), mobile triage (`/phone`), crash-resumable DAG pipelines, encrypted secrets, and authenticated company APIs/MCP out of the box.
+Instead of wiring together a Node/Python server, Postgres, Redis, and background workers just to run internal agents safely, Ergon compiles into **one static binary** (`11.88 MiB` on Linux) serving desktop (`/`), mobile triage (`/phone`), crash-resumable DAG pipelines, encrypted secrets, and authenticated company APIs/MCP out of the box.
 
-Routine analysis finishes autonomously. Every workspace also includes a **18-plugin starter catalog** spanning **Google Workspace** (Gmail, Calendar, Drive, Docs, Sheets, Slides), **Microsoft 365 & Outlook** (Outlook Mail/Calendar, OneDrive/SharePoint, Teams, local Excel & Word/PDF), **Business Apps** (Slack, Notion, GitHub, CRM & Billing), and **On-Device Local** tools—switching seamlessly between offline local execution and cloud OAuth2/XOAUTH2 while keeping an unobtrusive live activity pill in the header. Consequential actions—deletes, outbound emails or webhooks, retainer budget caps, MCP calls, external plugin writes, and newly synthesized tools (`"Would this help?"`)—park as Approve/Deny cards on `/phone` and `/`.
+Routine analysis finishes autonomously. Every workspace also includes **an 18-plugin starter catalog** spanning **Google Workspace** (Gmail, Calendar, Drive, Docs, Sheets, Slides), **Microsoft 365 & Outlook** (Outlook Mail/Calendar, OneDrive/SharePoint, Teams, local Excel & Word/PDF), **Business Apps** (Slack, Notion, GitHub, CRM & Billing), and **On-Device Local** tools—with one-click browser OAuth2 (PKCE `S256`) sign-in and native Google Workspace / Microsoft Graph REST adapters alongside offline local execution and an unobtrusive live activity pill in the header. Consequential actions—deletes, outbound emails or webhooks, retainer budget caps, MCP calls, external plugin writes, and newly synthesized tools (`"Would this help?"`)—park as Approve/Deny cards on `/phone` and `/`.
 
 ---
 
@@ -124,7 +124,7 @@ All claims below are backed by [`evals/run_evals.py`](evals/run_evals.py) agains
 | **5. Multi-Tenant RBAC & Memory Isolation** | `deterministic` | — | Role/workspace isolation enforced; unauthorized writes blocked (`403`) | **PASS** |
 | **6. Replay-Gated Self-Improvement** | `deterministic` | — | `v2` promoted on replay (`0` regressions), `v3` rejected, live auto-rollback -> `v1` | **PASS** |
 
-- **Server footprint (`v0.42.1` Linux release):** `11.62 MiB` single binary (`12,182,384 B`); `v0.40.0` measured `6.08 ms` cold boot, `22.19 MB` peak RSS, and `4,009.2 req/s` (`0/10,036` errors) over 16 concurrent workers.
+- **Server footprint (`v0.44.0` Linux release):** `11.88 MiB` single binary (`12,456,816 B`); `v0.40.0` measured `6.08 ms` cold boot, `22.19 MB` peak RSS, and `4,009.2 req/s` (`0/10,036` errors) over 16 concurrent workers.
 - **Sequential live model timing study (`30` runs across 4 roles):** [`evidence/timing/2026-11-27/report.md`](evidence/timing/2026-11-27/report.md).
 
 ---

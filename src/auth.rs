@@ -306,6 +306,11 @@ pub fn route_access(method: &str, path: &str) -> RouteAccess {
         ("POST", "/api/auth/password") => RouteAccess::AuthenticatedSelf,
         ("GET", "/api/plugins") => RouteAccess::AuthenticatedSelf,
         ("POST", "/api/plugins/toggle" | "/api/plugins/action") => RouteAccess::AuthenticatedSelf,
+        ("GET", "/api/plugins/oauth/callback") => RouteAccess::Public,
+        ("GET", "/api/plugins/oauth/apps") => RouteAccess::AuthenticatedSelf,
+        ("PUT" | "POST", "/api/plugins/oauth/apps") => RouteAccess::RequireAdmin,
+        ("GET" | "POST", "/api/plugins/oauth/start") => RouteAccess::AuthenticatedSelf,
+        ("POST", "/api/plugins/oauth/disconnect") => RouteAccess::AuthenticatedSelf,
 
         // Admin-only auth & identity management
         (_, p) if p == "/api/auth/users" || p.starts_with("/api/auth/users/") => {
@@ -815,7 +820,7 @@ fn validate_oidc_issuer_url(issuer: &str) -> Result<(), String> {
     Err("OIDC issuer must use https:// (or loopback http://127.0.0.1 / http://localhost for local testing)".to_string())
 }
 
-fn url_encode_component(s: &str) -> String {
+pub fn url_encode_component(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {
@@ -828,7 +833,7 @@ fn url_encode_component(s: &str) -> String {
     out
 }
 
-fn sanitize_redirect_after(raw: &str) -> String {
+pub fn sanitize_redirect_after(raw: &str) -> String {
     let trimmed = raw.trim();
     // "/phone" and "/phone?..." are plain same-origin paths, so this one rule covers them.
     if trimmed.starts_with('/') && !trimmed.starts_with("//") && !trimmed.contains('\\') {

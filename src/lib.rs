@@ -26,6 +26,7 @@ pub use llm::{
 pub mod logging;
 pub mod mcp;
 pub mod pipelines;
+pub mod plugin_cloud;
 pub mod plugins;
 pub mod proactive_offers;
 pub mod quality_bar;

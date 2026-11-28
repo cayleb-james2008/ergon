@@ -16,7 +16,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-publish
   cancel-in-progress: false
 
 env:
@@ -156,4 +156,9 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "v${{ needs.plan.outputs.version }}" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$BIN v${{ needs.plan.outputs.version }}" --notes-file notes.md
+        run: |
+          if gh release view "v${{ needs.plan.outputs.version }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release v${{ needs.plan.outputs.version }} already published"
+            exit 0
+          fi
+          gh release create "v${{ needs.plan.outputs.version }}" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$BIN v${{ needs.plan.outputs.version }}" --notes-file notes.md

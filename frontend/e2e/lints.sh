@@ -13,7 +13,8 @@ HALLMARK=${HALLMARK:-$HOME/.agents/skills/hallmark/scripts/sloplint.mjs}
 export CHROME_PATH=${E2E_CHROME:-$HOME/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome} HALLMARK_PUPPETEER=${HALLMARK_PUPPETEER:-$HOME/.npm/_npx/17406ab935e1f629}
 have() { [ -e "$1" ] || { echo "SKIP $2: $1 not found"; return 1; }; }
 cd "$G" # sloplint writes .hallmark/ next to its input and in the working directory: keep both in the out dir
-cp "$ROOT/assets/index.html" "$G/index.html"
+ln -sfn "$ROOT/assets/chunks" "$G/chunks"
+sed 's|url(/chunks/|url(./chunks/|g' "$ROOT/assets/index.html" > "$G/index.html"
 have "$TASTE_DIR/scripts/lint.mjs" lint && timeout 120 node "$TASTE_DIR/scripts/lint.mjs" "$ROOT/frontend/src/views/Paper.tsx" "$ROOT/frontend/src/views/Graph.tsx" "$ROOT/frontend/src/App.tsx" --json > "$G/lint.json" 2>&1
 have "$IMPECCABLE" detect && timeout 120 "$IMPECCABLE" detect --json "$U" > "$G/detect.json" 2>/dev/null
 have "$TASTE_DIR/scripts/inspect.mjs" inspect && timeout 300 node "$TASTE_DIR/scripts/inspect.mjs" "$U" --out "$G/inspect" --json > "$G/inspect.json" 2>/dev/null

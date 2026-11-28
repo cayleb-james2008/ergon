@@ -4,6 +4,14 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.44.0 - 2026-11-27
+
+Added one-click browser OAuth2 (PKCE `S256`) sign-in and native Google Workspace & Microsoft Graph REST adapters across the 18-plugin workplace library, plus CI/lint polish.
+
+- **One-Click OAuth2 PKCE & Native Google / Microsoft Cloud Adapters (`src/plugin_cloud.rs`, `src/plugins.rs`, `src/server/routes_system.rs`, `src/auth.rs`, `tests/plugin_oauth_cloud.rs`):** Added admin OAuth app registration (`/api/plugins/oauth/apps`), single-use CSPRNG `state` + `S256` PKCE browser flow (`/api/plugins/oauth/start`, `/api/plugins/oauth/callback`), AES-256-GCM encrypted token/secret storage in `secrets.enc.json` (`0600`, zero plaintext on disk), automatic refresh-token rotation, native REST adapters for Google Workspace (Gmail, Calendar, Drive, Docs, Sheets, Slides) and Microsoft Graph (Outlook Mail/Calendar, OneDrive, Teams, Excel), `/phone` Approve/Deny gating for external writes, and `Air-Gapped` policy enforcement.
+- **Plugins Panel OAuth Strip & Offline Demo Parity (`frontend/src/shell/PluginsPanel.tsx`, `frontend/src/lib/api.ts`, `frontend/src/App.tsx`, `frontend/src/lib/webEngine.ts`):** Added the 2-column Cloud Suites OAuth2 sign-in strip (`Sign in with Google`, `Sign in with Microsoft`, copyable redirect URI, inline admin app setup, and OAuth return toast) plus instant demo sign-in support in `ergon-web.html`.
+- **CI, Lint & Docs Polish (`.github/workflows/release.yml`, `frontend/e2e/lints.sh`, `README.md`):** Serialized release publishing (`concurrency: release-publish`) with an already-published guard to prevent tag/main publish races, rewrote `lints.sh` asset font URLs against the live fixture server (`0` `sloplint` warnings), and updated README stats.
+
 ## 0.43.0 - 2026-11-27
 
 Added the 18-plugin workplace starter library (Google Workspace, Microsoft 365 & Outlook, Business Apps, and On-Device Local), Outlook/Gmail IMAP `XOAUTH2` + quick-fill presets, full Anthropic `claude-haiku-5-5` compatibility with `6/6` passing live evals, and modern web standards / security hardening.

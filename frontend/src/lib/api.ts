@@ -3443,11 +3443,31 @@ export type PluginSpecItem = {
   effective_mode: "local" | "cloud" | "hybrid";
   status: "active_local" | "connected_cloud" | "connected_hybrid" | "enabled_needs_auth" | "available";
   cloud_connected: boolean;
+  oauth_provider?: "google" | "microsoft" | null;
+  oauth_connected?: boolean;
   connected_via?: string | null;
   linked_connector_id?: string | null;
   linked_trigger_id?: string | null;
   actions: PluginActionSpec[];
   connect_preset?: PluginConnectPreset | null;
+};
+
+export type PluginOAuthSuite = {
+  provider: "google" | "microsoft";
+  label: string;
+  configured: boolean;
+  source: "saved" | "env" | "unconfigured" | "demo";
+  client_id: string;
+  has_client_secret: boolean;
+  tenant?: string | null;
+  scopes: string;
+  redirect_uri: string;
+  connected: boolean;
+  account_email?: string | null;
+  account_name?: string | null;
+  expires_at_ms?: number | null;
+  connected_at_ms?: number | null;
+  plugin_ids: string[];
 };
 
 export type PluginsResponse = {
@@ -3501,5 +3521,43 @@ export async function runPluginAction(
       ...(opts?.args ? { args: opts.args } : {}),
       ...(opts?.thread_id ? { thread_id: opts.thread_id } : {}),
     },
+  });
+}
+
+export async function listPluginOAuthSuites(): Promise<Res<{ suites: PluginOAuthSuite[] }>> {
+  const r = await call<{ suites?: PluginOAuthSuite[] }>("/api/plugins/oauth/apps");
+  if (!r.ok) return r;
+  return { ok: true, data: { suites: Array.isArray(r.data.suites) ? r.data.suites : [] } };
+}
+
+export async function savePluginOAuthApp(payload: {
+  provider: "google" | "microsoft";
+  client_id: string;
+  client_secret?: string;
+  clear_client_secret?: boolean;
+  tenant?: string;
+}): Promise<Res<{ suites: PluginOAuthSuite[] }>> {
+  return call<{ suites: PluginOAuthSuite[] }>("/api/plugins/oauth/apps", {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export async function startPluginOAuth(
+  provider: "google" | "microsoft",
+  returnTo = "/"
+): Promise<Res<{ ok: boolean; authorization_url?: string; demo_connected?: boolean; provider?: string }>> {
+  return call<{ ok: boolean; authorization_url?: string; demo_connected?: boolean; provider?: string }>(
+    "/api/plugins/oauth/start",
+    { method: "POST", body: { provider, return_to: returnTo } }
+  );
+}
+
+export async function disconnectPluginOAuth(
+  provider: "google" | "microsoft"
+): Promise<Res<{ suites: PluginOAuthSuite[] }>> {
+  return call<{ suites: PluginOAuthSuite[] }>("/api/plugins/oauth/disconnect", {
+    method: "POST",
+    body: { provider },
   });
 }
