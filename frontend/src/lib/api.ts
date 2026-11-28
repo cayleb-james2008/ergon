@@ -3427,9 +3427,25 @@ export type PluginConnectPreset = {
   connector_tab?: string;
 };
 
+export type PluginCredentialField = {
+  key: string;
+  label: string;
+  description?: string;
+  is_secret?: boolean;
+  is_required?: boolean;
+  kind?: "env" | "bearer" | string;
+};
+
+export type PluginInstallSpec = {
+  transport: "http_sse" | "stdio" | string;
+  command_or_url: string;
+  args: string[];
+  credential_fields: PluginCredentialField[];
+};
+
 export type PluginSpecItem = {
   id: string;
-  suite: "google" | "microsoft" | "business" | "local";
+  suite: "google" | "microsoft" | "business" | "local" | "community" | string;
   suite_label: string;
   name: string;
   tagline: string;
@@ -3438,6 +3454,9 @@ export type PluginSpecItem = {
   transport: string;
   local_ready: boolean;
   default_enabled: boolean;
+  version?: string;
+  source?: string;
+  installed?: boolean;
   enabled: boolean;
   preferred_mode: "auto" | "local" | "cloud";
   effective_mode: "local" | "cloud" | "hybrid";
@@ -3448,8 +3467,43 @@ export type PluginSpecItem = {
   connected_via?: string | null;
   linked_connector_id?: string | null;
   linked_trigger_id?: string | null;
+  linked_mcp_server_id?: string | null;
   actions: PluginActionSpec[];
   connect_preset?: PluginConnectPreset | null;
+  install_spec?: PluginInstallSpec | null;
+  website_url?: string | null;
+  repository_url?: string | null;
+};
+
+export type PluginRegistrySource = {
+  id: string;
+  name: string;
+  kind: "ergon_manifest" | "mcp_registry_v01" | string;
+  url: string;
+  enabled: boolean;
+  builtin?: boolean;
+  last_sync_ms?: number;
+  item_count?: number;
+  status?: string;
+  error?: string | null;
+};
+
+export type PluginRegistryStatus = {
+  auto_update: "auto" | "manual" | "off" | string;
+  sync_interval_secs: number;
+  last_sync_ms: number;
+  catalog_sha256?: string | null;
+  curated_count: number;
+  community_count: number;
+  sources_count: number;
+  sources: PluginRegistrySource[];
+};
+
+export type PluginRegistrySearchResult = {
+  query: string;
+  count: number;
+  live_error?: string | null;
+  results: PluginSpecItem[];
 };
 
 export type PluginOAuthSuite = {
@@ -3478,6 +3532,7 @@ export type PluginsResponse = {
     local_active: number;
     cloud_connected: number;
   };
+  registry?: PluginRegistryStatus;
 };
 
 export async function listPlugins(): Promise<Res<PluginsResponse>> {
@@ -3490,7 +3545,69 @@ export async function listPlugins(): Promise<Res<PluginsResponse>> {
     local_active: plugins.filter((p) => p.status === "active_local" || p.status === "connected_hybrid").length,
     cloud_connected: plugins.filter((p) => p.cloud_connected).length,
   };
-  return { ok: true, data: { plugins, summary } };
+  return {
+    ok: true,
+    data: {
+      plugins,
+      summary,
+      ...(r.data.registry ? { registry: r.data.registry } : {}),
+    },
+  };
+}
+
+export async function getPluginRegistry(): Promise<Res<PluginRegistryStatus>> {
+  return call<PluginRegistryStatus>("/api/plugins/registry");
+}
+
+export async function updatePluginRegistryConfig(payload: {
+  auto_update?: "auto" | "manual" | "off";
+  sync_interval_secs?: number;
+  sources?: PluginRegistrySource[];
+  add_source?: { id?: string; name?: string; kind?: string; url: string; enabled?: boolean };
+  remove_source_id?: string;
+}): Promise<Res<PluginRegistryStatus>> {
+  return call<PluginRegistryStatus>("/api/plugins/registry/config", {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export async function syncPluginRegistry(): Promise<Res<PluginRegistryStatus>> {
+  return call<PluginRegistryStatus>("/api/plugins/registry/sync", {
+    method: "POST",
+    body: {},
+  });
+}
+
+export async function searchPluginRegistry(query: string): Promise<Res<PluginRegistrySearchResult>> {
+  const q = encodeURIComponent(query.trim());
+  return call<PluginRegistrySearchResult>(`/api/plugins/registry/search?q=${q}`);
+}
+
+export async function installRegistryPlugin(payload: {
+  plugin_id?: string;
+  spec?: Partial<PluginSpecItem>;
+  credentials?: Record<string, string>;
+}): Promise<Res<{ ok: boolean; plugin: PluginSpecItem; mcp_server_id: string }>> {
+  return call<{ ok: boolean; plugin: PluginSpecItem; mcp_server_id: string }>(
+    "/api/plugins/registry/install",
+    {
+      method: "POST",
+      body: payload,
+    }
+  );
+}
+
+export async function uninstallRegistryPlugin(
+  pluginId: string
+): Promise<Res<{ ok: boolean; plugin_id: string; plugins: PluginSpecItem[] }>> {
+  return call<{ ok: boolean; plugin_id: string; plugins: PluginSpecItem[] }>(
+    "/api/plugins/registry/uninstall",
+    {
+      method: "POST",
+      body: { plugin_id: pluginId },
+    }
+  );
 }
 
 export async function togglePlugin(

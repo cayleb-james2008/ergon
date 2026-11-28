@@ -1,6 +1,7 @@
-//! Integration tests for Ergon's Default App Plugin Library:
-//! - 18 starter workplace plugins across Google Workspace (6), Microsoft 365 & Outlook (6),
-//!   Business Apps (4), and On-Device Local (2)
+//! Integration tests for Ergon's Auto-Updating Default App Plugin Library:
+//! - 32 starter workplace plugins across Google Workspace (6), Microsoft 365 & Outlook (6),
+//!   Business Apps (18), and On-Device Local (2)
+//! - Registry status block included in `GET /api/plugins`
 //! - Atomic 0600 `plugins.json` persistence for enable + preferred_mode (`auto` | `local` | `cloud`)
 //! - On-device local & hybrid execution (`list_workspace`, `office-excel.build_sheet`)
 //! - `/phone` & Today `Approve/Deny` gating for consequential external writes (`plugin_action`)
@@ -106,9 +107,10 @@ fn plugins_catalog_routes_and_0600_persistence() {
     let (st, body, raw) = http_req(addr, "GET", "/api/plugins", "");
     assert_eq!(st, 200, "{raw}");
     let items = body["plugins"].as_array().expect("plugins array");
-    assert_eq!(items.len(), 18, "expected 18 default plugins: {items:?}");
-    assert_eq!(body["summary"]["total"], json!(18));
+    assert_eq!(items.len(), 32, "expected 32 default plugins: {items:?}");
+    assert_eq!(body["summary"]["total"], json!(32));
     assert_eq!(body["summary"]["enabled_count"], json!(5));
+    assert!(body["registry"]["auto_update"].is_string(), "missing registry block: {body}");
 
     let count_suite = |suite: &str| {
         items
@@ -118,7 +120,7 @@ fn plugins_catalog_routes_and_0600_persistence() {
     };
     assert_eq!(count_suite("google"), 6);
     assert_eq!(count_suite("microsoft"), 6);
-    assert_eq!(count_suite("business"), 4);
+    assert_eq!(count_suite("business"), 18);
     assert_eq!(count_suite("local"), 2);
 
     for id in [
@@ -138,6 +140,20 @@ fn plugins_catalog_routes_and_0600_persistence() {
         "notion",
         "github",
         "crm-billing",
+        "linear",
+        "jira",
+        "asana",
+        "confluence",
+        "figma",
+        "zoom",
+        "hubspot",
+        "salesforce",
+        "stripe",
+        "quickbooks",
+        "zendesk",
+        "airtable",
+        "shopify",
+        "postgres-sqlite",
         "local-workspace-files",
         "local-mcp-bridge",
     ] {

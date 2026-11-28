@@ -60,6 +60,8 @@ async function queryLnaPermissionSafe(
 function SettingsBody({
   theme,
   onTheme,
+  uiMode = "simple",
+  onUiMode,
   status,
   auth,
   onSignOut,
@@ -78,6 +80,8 @@ function SettingsBody({
 }: {
   theme: Theme;
   onTheme: (t: Theme) => void;
+  uiMode?: "simple" | "advanced";
+  onUiMode?: (m: "simple" | "advanced") => void;
   status: Status | null | "error";
   auth?: AuthMePayload | null;
   onSignOut?: () => Promise<void> | void;
@@ -343,6 +347,40 @@ function SettingsBody({
         onRefreshAuth={onRefreshAuth ?? (() => {})}
         onUsersChanged={onRefreshPeople}
       />
+
+      {/* 0b. Interface Mode (Simple default vs Advanced workbench) */}
+      {onUiMode && (
+        <section aria-labelledby="settings-interface-h" className="flex flex-col gap-2.5 rounded-card border border-hairline bg-board/40 p-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 id="settings-interface-h" className="text-sm font-medium text-ink">Interface mode</h3>
+              <p className="text-xs text-ink-2">
+                Simple hides technical menus for everyday tasks; Advanced reveals workflows, connectors, schedules, and Work graph.
+              </p>
+            </div>
+            <SegmentedControl aria-label="Interface mode">
+              <SegmentedControlItem
+                data-id="simple"
+                aria-pressed={uiMode === "simple"}
+                data-checked={uiMode === "simple" ? "" : undefined}
+                className="min-h-11 gap-1.5 px-3 md:min-h-8"
+                onClick={() => onUiMode("simple")}
+              >
+                Simple
+              </SegmentedControlItem>
+              <SegmentedControlItem
+                data-id="advanced"
+                aria-pressed={uiMode === "advanced"}
+                data-checked={uiMode === "advanced" ? "" : undefined}
+                className="min-h-11 gap-1.5 px-3 md:min-h-8"
+                onClick={() => onUiMode("advanced")}
+              >
+                Advanced
+              </SegmentedControlItem>
+            </SegmentedControl>
+          </div>
+        </section>
+      )}
 
       {/* 1. Appearance (System / Light / Dark SegmentedControl) */}
       <section aria-labelledby="settings-appearance-h" className="flex flex-col gap-2.5 rounded-card border border-hairline bg-board/40 p-3.5">
@@ -986,6 +1024,8 @@ function SettingsBody({
 export function SettingsPanel({
   theme,
   onTheme,
+  uiMode = "simple",
+  onUiMode,
   status,
   auth,
   onSignOut,
@@ -1007,6 +1047,8 @@ export function SettingsPanel({
 }: {
   theme: Theme;
   onTheme: (t: Theme) => void;
+  uiMode?: "simple" | "advanced";
+  onUiMode?: (m: "simple" | "advanced") => void;
   status: Status | null | "error";
   auth?: AuthMePayload | null;
   onSignOut?: () => Promise<void> | void;
@@ -1047,6 +1089,8 @@ export function SettingsPanel({
       <SettingsBody
         theme={theme}
         onTheme={onTheme}
+        uiMode={uiMode}
+        onUiMode={onUiMode}
         status={status}
         auth={auth}
         onSignOut={onSignOut}

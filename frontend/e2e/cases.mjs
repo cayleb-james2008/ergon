@@ -128,6 +128,13 @@ export default ({ LONG, json, patch, malformed, down, overflowing, has }) => [
     name: "malformed work graph shows plain error with Retry",
     routes: [["**/api/graph", malformed]],
     act: async (p) => {
+      if ((p.viewportSize()?.width ?? 1440) < 768) {
+        await p.getByRole("button", { name: "Open menu" }).click();
+      }
+      await p.locator("#ui-mode-toggle").click();
+      if ((p.viewportSize()?.width ?? 1440) < 768) {
+        await p.keyboard.press("Escape");
+      }
       await p.getByRole("tab", { name: "Work Graph" }).click();
       await p.getByText("The graph could not be loaded.").first().waitFor({ state: "visible", timeout: 10_000 });
     },

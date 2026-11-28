@@ -506,6 +506,7 @@ pub(super) fn serve_inner(
     }
     if background_updates {
         state.updater.start_background();
+        crate::plugin_registry::start_background_sync(state.cfg.data_dir.clone());
     }
     if state.scheduler_enabled {
         start_scheduler_thread(&state);

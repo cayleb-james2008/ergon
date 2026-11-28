@@ -1,0 +1,772 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-11-28T04:40:00Z",
+  "plugins": [
+    {
+      "id": "google-gmail",
+      "suite": "google",
+      "suite_label": "Google Workspace",
+      "name": "Gmail",
+      "tagline": "Inbox intake & approval-gated sends",
+      "description": "Polls Gmail into intake/ via Gmail API or IMAPS XOAUTH2 and sends outbound mail only after /phone approval.",
+      "mode": "cloud",
+      "transport": "smtp_imap_xoauth2",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "read_inbox", "label": "Read inbox", "description": "Poll unread Gmail messages into workspace/intake/.", "access": "read", "requires_approval": false },
+        { "name": "draft_reply", "label": "Draft reply", "description": "Compose a local Markdown email draft inside the workspace.", "access": "read", "requires_approval": false },
+        { "name": "send_mail", "label": "Send email", "description": "Send email via Gmail API or SMTP XOAUTH2 (parks Approve/Deny card).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": {
+        "api_base_url": null,
+        "oauth_token_url": "https://oauth2.googleapis.com/token",
+        "oauth_scopes": "https://mail.google.com/",
+        "smtp_host": "smtp.gmail.com",
+        "smtp_port": 587,
+        "smtp_security": "starttls",
+        "imap_host": "imap.gmail.com",
+        "imap_port": 993,
+        "imap_security": "imaps",
+        "match_hosts": ["imap.gmail.com", "smtp.gmail.com"],
+        "connector_tab": "outbound"
+      }
+    },
+    {
+      "id": "google-calendar",
+      "suite": "google",
+      "suite_label": "Google Workspace",
+      "name": "Google Calendar",
+      "tagline": "Schedules, availability & invites",
+      "description": "Reads team calendar events and proposes meeting invites with Approve/Deny gating.",
+      "mode": "cloud",
+      "transport": "oauth2_rest",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "list_events", "label": "List events", "description": "Fetch upcoming Google Calendar schedule.", "access": "read", "requires_approval": false },
+        { "name": "create_event", "label": "Create event", "description": "Schedule or update a calendar invite (parks Approve/Deny card).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": {
+        "api_base_url": "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        "oauth_token_url": "https://oauth2.googleapis.com/token",
+        "oauth_scopes": "https://www.googleapis.com/auth/calendar",
+        "match_hosts": ["www.googleapis.com"],
+        "connector_tab": "outbound"
+      }
+    },
+    {
+      "id": "google-drive",
+      "suite": "google",
+      "suite_label": "Google Workspace",
+      "name": "Google Drive",
+      "tagline": "Workspace sync & Drive deliverables",
+      "description": "Reads local synced workspace files offline or connects Drive API v3 for cloud uploads.",
+      "mode": "hybrid",
+      "transport": "oauth2_rest",
+      "local_ready": true,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "list_files", "label": "List files", "description": "List synced Drive folders in Google Cloud or on-device workspace.", "access": "read", "requires_approval": false },
+        { "name": "upload_deliverable", "label": "Upload file", "description": "Upload a workspace deliverable to Drive (parks Approve/Deny card).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": {
+        "api_base_url": "https://www.googleapis.com/drive/v3/files",
+        "oauth_token_url": "https://oauth2.googleapis.com/token",
+        "oauth_scopes": "https://www.googleapis.com/auth/drive",
+        "match_hosts": ["www.googleapis.com"],
+        "connector_tab": "outbound"
+      }
+    },
+    {
+      "id": "google-docs",
+      "suite": "google",
+      "suite_label": "Google Workspace",
+      "name": "Google Docs",
+      "tagline": "Local drafting + cloud Docs sync",
+      "description": "Drafts Markdown/Word briefs on-device immediately; optionally syncs to Google Docs with approval.",
+      "mode": "hybrid",
+      "transport": "oauth2_rest",
+      "local_ready": true,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "draft_doc", "label": "Draft document", "description": "Create a structured Markdown or Word draft in the local workspace.", "access": "read", "requires_approval": false },
+        { "name": "publish_doc", "label": "Publish to Docs", "description": "Sync document to Google Docs (parks Approve/Deny card).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": {
+        "api_base_url": "https://docs.googleapis.com/v1/documents",
+        "oauth_token_url": "https://oauth2.googleapis.com/token",
+        "oauth_scopes": "https://www.googleapis.com/auth/documents",
+        "match_hosts": ["docs.googleapis.com"],
+        "connector_tab": "outbound"
+      }
+    },
+    {
+      "id": "google-sheets",
+      "suite": "google",
+      "suite_label": "Google Workspace",
+      "name": "Google Sheets",
+      "tagline": "Exact i128 rollups + cloud Sheets sync",
+      "description": "Runs penny-exact CSV/table rollups locally and pushes approved ranges to Google Sheets.",
+      "mode": "hybrid",
+      "transport": "oauth2_rest",
+      "local_ready": true,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "reconcile_sheet", "label": "Build / reconcile sheet", "description": "Run deterministic exact-decimal table rollups locally in the workspace.", "access": "read", "requires_approval": false },
+        { "name": "update_range", "label": "Push range update", "description": "Write rows to Google Sheets (parks Approve/Deny card).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": {
+        "api_base_url": "https://sheets.googleapis.com/v4/spreadsheets",
+        "oauth_token_url": "https://oauth2.googleapis.com/token",
+        "oauth_scopes": "https://www.googleapis.com/auth/spreadsheets",
+        "match_hosts": ["sheets.googleapis.com"],
+        "connector_tab": "outbound"
+      }
+    },
+    {
+      "id": "google-slides",
+      "suite": "google",
+      "suite_label": "Google Workspace",
+      "name": "Google Slides",
+      "tagline": "Deck outlines locally + cloud publish",
+      "description": "Builds deck outlines locally and pushes approved slide updates via Google Slides API.",
+      "mode": "hybrid",
+      "transport": "oauth2_rest",
+      "local_ready": true,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "draft_outline", "label": "Draft deck outline", "description": "Draft a slide-by-slide Markdown outline locally in the workspace.", "access": "read", "requires_approval": false },
+        { "name": "update_deck", "label": "Publish slides", "description": "Update a Google Slides presentation (parks Approve/Deny card).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": {
+        "api_base_url": "https://slides.googleapis.com/v1/presentations",
+        "oauth_token_url": "https://oauth2.googleapis.com/token",
+        "oauth_scopes": "https://www.googleapis.com/auth/presentations",
+        "match_hosts": ["slides.googleapis.com"],
+        "connector_tab": "outbound"
+      }
+    },
+
+    {
+      "id": "outlook-mail",
+      "suite": "microsoft",
+      "suite_label": "Microsoft 365 & Outlook",
+      "name": "Outlook Mail",
+      "tagline": "Exchange / M365 Graph + IMAPS/SMTP XOAUTH2",
+      "description": "Connects company Outlook/Exchange shared or personal inboxes via one-click M365 OAuth2 or XOAUTH2 with gated sends.",
+      "mode": "cloud",
+      "transport": "smtp_imap_xoauth2",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "read_inbox", "label": "Read inbox", "description": "Poll unread Outlook / Microsoft 365 messages into workspace/intake/.", "access": "read", "requires_approval": false },
+        { "name": "draft_reply", "label": "Draft reply", "description": "Compose an Outlook reply draft locally inside the workspace.", "access": "read", "requires_approval": false },
+        { "name": "send_mail", "label": "Send email", "description": "Send mail via Microsoft Graph or smtp.office365.com (parks approval).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": {
+        "oauth_token_url": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        "oauth_scopes": "https://outlook.office365.com/SMTP.Send https://outlook.office365.com/IMAP.AccessAsUser.All offline_access",
+        "smtp_host": "smtp.office365.com",
+        "smtp_port": 587,
+        "smtp_security": "starttls",
+        "imap_host": "outlook.office365.com",
+        "imap_port": 993,
+        "imap_security": "imaps",
+        "match_hosts": ["outlook.office365.com", "smtp.office365.com"],
+        "connector_tab": "outbound"
+      }
+    },
+    {
+      "id": "outlook-calendar",
+      "suite": "microsoft",
+      "suite_label": "Microsoft 365 & Outlook",
+      "name": "Outlook Calendar",
+      "tagline": "Microsoft Graph events & scheduling",
+      "description": "Reads Outlook Calendar availability and stages meeting invites for /phone approval.",
+      "mode": "cloud",
+      "transport": "oauth2_rest",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "list_events", "label": "List events", "description": "Read Microsoft 365 calendar events via Microsoft Graph.", "access": "read", "requires_approval": false },
+        { "name": "schedule_meeting", "label": "Schedule meeting", "description": "Create an Outlook calendar invite (parks Approve/Deny card).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": {
+        "api_base_url": "https://graph.microsoft.com/v1.0/me/events",
+        "oauth_token_url": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        "oauth_scopes": "https://graph.microsoft.com/Calendars.ReadWrite offline_access",
+        "match_hosts": ["graph.microsoft.com"],
+        "connector_tab": "outbound"
+      }
+    },
+    {
+      "id": "onedrive-sharepoint",
+      "suite": "microsoft",
+      "suite_label": "Microsoft 365 & Outlook",
+      "name": "OneDrive & SharePoint",
+      "tagline": "Local files offline + M365 Graph sync",
+      "description": "Lists synced workspace files offline and uploads deliverables to SharePoint/OneDrive with approval.",
+      "mode": "hybrid",
+      "transport": "oauth2_rest",
+      "local_ready": true,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "list_files", "label": "List files", "description": "List OneDrive/SharePoint items or local synced workspace files.", "access": "read", "requires_approval": false },
+        { "name": "publish_file", "label": "Publish to SharePoint", "description": "Upload a finished deliverable to OneDrive/SharePoint (parks approval).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": {
+        "api_base_url": "https://graph.microsoft.com/v1.0/me/drive/root/children",
+        "oauth_token_url": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        "oauth_scopes": "https://graph.microsoft.com/Files.ReadWrite.All offline_access",
+        "match_hosts": ["graph.microsoft.com"],
+        "connector_tab": "outbound"
+      }
+    },
+    {
+      "id": "microsoft-teams",
+      "suite": "microsoft",
+      "suite_label": "Microsoft 365 & Outlook",
+      "name": "Microsoft Teams",
+      "tagline": "Channel updates & status posts",
+      "description": "Reads Teams channel context and routes outbound status updates through Approve/Deny.",
+      "mode": "cloud",
+      "transport": "oauth2_rest",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "read_channel", "label": "Read channel", "description": "Fetch recent Microsoft Teams channel messages.", "access": "read", "requires_approval": false },
+        { "name": "post_update", "label": "Post Teams update", "description": "Send a message to a Microsoft Teams channel (parks approval).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": {
+        "api_base_url": "https://graph.microsoft.com/v1.0/me/joinedTeams",
+        "oauth_token_url": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        "oauth_scopes": "https://graph.microsoft.com/ChannelMessage.Send offline_access",
+        "match_hosts": ["graph.microsoft.com"],
+        "connector_tab": "outbound"
+      }
+    },
+    {
+      "id": "office-excel",
+      "suite": "microsoft",
+      "suite_label": "Microsoft 365 & Outlook",
+      "name": "Excel & Spreadsheets",
+      "tagline": "On-device .xlsx/.csv + live SUM formulas",
+      "description": "Enabled out of the box locally: reads .xlsx/.csv, deduplicates BOMs with i128 math, and exports workbooks.",
+      "mode": "hybrid",
+      "transport": "local_builtin",
+      "local_ready": true,
+      "default_enabled": true,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "inspect_workbook", "label": "Inspect sheets", "description": "List and inspect .xlsx/.csv spreadsheets in the local workspace.", "access": "read", "requires_approval": false },
+        { "name": "build_sheet", "label": "Build spreadsheet", "description": "Create a penny-exact CSV or Excel sheet on-device via make_spreadsheet.", "access": "read", "requires_approval": false },
+        { "name": "export_xlsx", "label": "Export .xlsx workbook", "description": "Export workspace tables to multi-sheet Excel with live SUM formulas.", "access": "read", "requires_approval": false }
+      ],
+      "connect_preset": {
+        "api_base_url": "https://graph.microsoft.com/v1.0/me/drive/root:/workbooks",
+        "oauth_token_url": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        "oauth_scopes": "https://graph.microsoft.com/Files.ReadWrite offline_access",
+        "match_hosts": ["graph.microsoft.com"],
+        "connector_tab": "outbound"
+      }
+    },
+    {
+      "id": "office-word-pdf",
+      "suite": "microsoft",
+      "suite_label": "Microsoft 365 & Outlook",
+      "name": "Word & PDF Suite",
+      "tagline": "On-device .docx/.pdf reading & export",
+      "description": "Enabled out of the box locally: reads Word, PowerPoint, and PDFs and exports signed reports on-device.",
+      "mode": "hybrid",
+      "transport": "local_builtin",
+      "local_ready": true,
+      "default_enabled": true,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "read_document", "label": "Read Word / PDF", "description": "Inspect .docx, .pdf, or .md files in the local workspace.", "access": "read", "requires_approval": false },
+        { "name": "draft_document", "label": "Draft document", "description": "Generate a clean Markdown report locally via write_document.", "access": "read", "requires_approval": false },
+        { "name": "export_docx_pdf", "label": "Export PDF / Word", "description": "Export a Markdown file to native .pdf or .docx locally.", "access": "read", "requires_approval": false }
+      ],
+      "connect_preset": null
+    },
+
+    {
+      "id": "slack",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "Slack",
+      "tagline": "Team channels, digests & status updates",
+      "description": "Reads channels or posts approved run summaries into Slack workspaces.",
+      "mode": "cloud",
+      "transport": "oauth2_rest",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "read_channel", "label": "Read channel", "description": "Read recent channel activity via Slack.", "access": "read", "requires_approval": false },
+        { "name": "post_message", "label": "Post Slack message", "description": "Send a message to a Slack channel or webhook (parks approval).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": {
+        "api_base_url": "https://slack.com/api/chat.postMessage",
+        "oauth_token_url": "https://slack.com/api/oauth.v2.access",
+        "oauth_scopes": "chat:write channels:read",
+        "match_hosts": ["slack.com", "hooks.slack.com"],
+        "connector_tab": "outbound"
+      },
+      "install_spec": {
+        "transport": "http_sse",
+        "command_or_url": "https://mcp.slack.com/mcp",
+        "args": [],
+        "credential_fields": [
+          { "key": "SLACK_TOKEN", "label": "Slack Bot or Workspace Token", "description": "Bot/User token used to authenticate Slack actions.", "is_secret": true, "is_required": true, "kind": "bearer" }
+        ]
+      }
+    },
+    {
+      "id": "notion",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "Notion",
+      "tagline": "Wiki search & gated database updates",
+      "description": "Queries Notion pages and routes database writes through human approval.",
+      "mode": "cloud",
+      "transport": "oauth2_rest",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "search_pages", "label": "Search Notion", "description": "Search connected Notion databases and pages.", "access": "read", "requires_approval": false },
+        { "name": "update_page", "label": "Update page", "description": "Write an entry or page update in Notion (parks approval).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": {
+        "api_base_url": "https://api.notion.com/v1/search",
+        "oauth_token_url": "https://api.notion.com/v1/oauth/token",
+        "oauth_scopes": "read_content insert_content update_content",
+        "match_hosts": ["api.notion.com"],
+        "connector_tab": "outbound"
+      },
+      "install_spec": {
+        "transport": "http_sse",
+        "command_or_url": "https://mcp.notion.com/mcp",
+        "args": [],
+        "credential_fields": [
+          { "key": "NOTION_TOKEN", "label": "Notion Integration Token", "description": "Internal integration or OAuth access token for your workspace.", "is_secret": true, "is_required": true, "kind": "bearer" }
+        ]
+      }
+    },
+    {
+      "id": "github",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "GitHub",
+      "tagline": "Issues, PR summaries & gated comments",
+      "description": "Reads issues/PRs and parks any external comment or status post on /phone.",
+      "mode": "hybrid",
+      "transport": "oauth2_rest",
+      "local_ready": true,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "list_issues", "label": "List issues & PRs", "description": "Query repository issues and pull requests.", "access": "read", "requires_approval": false },
+        { "name": "comment_issue", "label": "Comment on PR / Issue", "description": "Post a comment or status update on GitHub (parks approval).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": {
+        "api_base_url": "https://api.github.com",
+        "oauth_token_url": "https://github.com/login/oauth/access_token",
+        "oauth_scopes": "repo read:org",
+        "match_hosts": ["api.github.com"],
+        "connector_tab": "outbound"
+      },
+      "install_spec": {
+        "transport": "http_sse",
+        "command_or_url": "https://api.githubcopilot.com/mcp/",
+        "args": [],
+        "credential_fields": [
+          { "key": "GITHUB_TOKEN", "label": "GitHub Personal Access Token", "description": "Scoped token for reading repositories or commenting with approval.", "is_secret": true, "is_required": true, "kind": "bearer" }
+        ]
+      }
+    },
+    {
+      "id": "crm-billing",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "CRM & Billing",
+      "tagline": "Client vaults, retainers & QuickBooks/Stripe sync",
+      "description": "Enabled out of the box locally for client vaults & retainers; supports approval-gated cloud invoice sync.",
+      "mode": "hybrid",
+      "transport": "local_builtin",
+      "local_ready": true,
+      "default_enabled": true,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "list_clients", "label": "List clients", "description": "Read active clients and retainers from local Company DB.", "access": "read", "requires_approval": false },
+        { "name": "sync_invoice", "label": "Sync external billing", "description": "Push an approved invoice to Stripe / QuickBooks (parks approval).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": null
+    },
+    {
+      "id": "linear",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "Linear",
+      "tagline": "Issues, triage queues & roadmap updates",
+      "description": "Triage bugs, search engineering cycles, and stage new tickets with /phone approval.",
+      "mode": "cloud",
+      "transport": "mcp",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "run_tool", "label": "List issues & cycles", "description": "Query Linear teams, projects, and active issues.", "access": "read", "requires_approval": false },
+        { "name": "write_action", "label": "Create or update issue", "description": "Update tickets in Linear (parks Approve/Deny card).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": { "api_base_url": "https://mcp.linear.app/mcp", "match_hosts": ["mcp.linear.app", "api.linear.app"], "connector_tab": "mcp" },
+      "install_spec": {
+        "transport": "http_sse",
+        "command_or_url": "https://mcp.linear.app/mcp",
+        "args": [],
+        "credential_fields": [
+          { "key": "LINEAR_TOKEN", "label": "Linear API Key", "description": "Personal API key from Linear Settings -> Security & Access.", "is_secret": true, "is_required": true, "kind": "bearer" }
+        ]
+      }
+    },
+    {
+      "id": "jira",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "Jira",
+      "tagline": "Sprint tickets, JQL search & status transitions",
+      "description": "Pull sprint blockers, summarize epics, and transition issues after human sign-off.",
+      "mode": "cloud",
+      "transport": "mcp",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "run_tool", "label": "Search Jira issues", "description": "Search sprints, boards, and tickets via Atlassian.", "access": "read", "requires_approval": false },
+        { "name": "write_action", "label": "Update ticket", "description": "Create or transition a Jira issue (parks Approve/Deny card).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": { "api_base_url": "https://mcp.atlassian.com/v1/sse", "match_hosts": ["mcp.atlassian.com"], "connector_tab": "mcp" },
+      "install_spec": {
+        "transport": "http_sse",
+        "command_or_url": "https://mcp.atlassian.com/v1/sse",
+        "args": [],
+        "credential_fields": [
+          { "key": "ATLASSIAN_TOKEN", "label": "Atlassian API Token", "description": "Token with Jira read/write scope.", "is_secret": true, "is_required": true, "kind": "bearer" }
+        ]
+      }
+    },
+    {
+      "id": "asana",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "Asana",
+      "tagline": "Project milestones, tasks & status recaps",
+      "description": "Summarize cross-functional deliverables and propose task updates with approval.",
+      "mode": "cloud",
+      "transport": "mcp",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "run_tool", "label": "List projects & tasks", "description": "Read Asana boards and due dates.", "access": "read", "requires_approval": false },
+        { "name": "write_action", "label": "Update tasks", "description": "Create or complete Asana tasks (parks Approve/Deny card).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": { "api_base_url": "https://mcp.asana.com/sse", "match_hosts": ["mcp.asana.com", "app.asana.com"], "connector_tab": "mcp" },
+      "install_spec": {
+        "transport": "http_sse",
+        "command_or_url": "https://mcp.asana.com/sse",
+        "args": [],
+        "credential_fields": [
+          { "key": "ASANA_TOKEN", "label": "Asana Personal Access Token", "description": "Asana developer PAT stored encrypted in the vault.", "is_secret": true, "is_required": true, "kind": "bearer" }
+        ]
+      }
+    },
+    {
+      "id": "confluence",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "Confluence",
+      "tagline": "Company handbooks, SOPs & release notes",
+      "description": "Search internal documentation and publish draft pages only after review.",
+      "mode": "cloud",
+      "transport": "mcp",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "run_tool", "label": "Search wiki pages", "description": "Search Confluence spaces and SOPs.", "access": "read", "requires_approval": false },
+        { "name": "write_action", "label": "Publish page", "description": "Create or update Confluence content (parks approval).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": { "api_base_url": "https://mcp.atlassian.com/v1/sse", "match_hosts": ["mcp.atlassian.com"], "connector_tab": "mcp" },
+      "install_spec": {
+        "transport": "http_sse",
+        "command_or_url": "https://mcp.atlassian.com/v1/sse",
+        "args": [],
+        "credential_fields": [
+          { "key": "ATLASSIAN_TOKEN", "label": "Atlassian API Token", "description": "Token with Confluence read/write scope.", "is_secret": true, "is_required": true, "kind": "bearer" }
+        ]
+      }
+    },
+    {
+      "id": "figma",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "Figma",
+      "tagline": "Design specs, frames & component tokens",
+      "description": "Inspect design frames, comments, and design-system variables for product handoffs.",
+      "mode": "cloud",
+      "transport": "mcp",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "run_tool", "label": "Inspect design file", "description": "Read Figma frames, specs, and comments.", "access": "read", "requires_approval": false },
+        { "name": "write_action", "label": "Post design comment", "description": "Post review notes on Figma files (parks approval).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": { "api_base_url": "https://mcp.figma.com/mcp", "match_hosts": ["mcp.figma.com", "api.figma.com"], "connector_tab": "mcp" },
+      "install_spec": {
+        "transport": "http_sse",
+        "command_or_url": "https://mcp.figma.com/mcp",
+        "args": [],
+        "credential_fields": [
+          { "key": "FIGMA_TOKEN", "label": "Figma Personal Access Token", "description": "Token generated in Figma Account Settings.", "is_secret": true, "is_required": true, "kind": "bearer" }
+        ]
+      }
+    },
+    {
+      "id": "zoom",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "Zoom",
+      "tagline": "Meeting summaries, transcripts & follow-ups",
+      "description": "Pull meeting transcripts into local summaries and schedule calls with approval.",
+      "mode": "cloud",
+      "transport": "oauth2_rest",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "run_tool", "label": "Fetch transcripts", "description": "Read Zoom meeting recordings and summaries.", "access": "read", "requires_approval": false },
+        { "name": "write_action", "label": "Schedule Zoom meeting", "description": "Create or update Zoom meetings (parks approval).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": { "api_base_url": "https://api.zoom.us/v2/users/me/meetings", "match_hosts": ["api.zoom.us"], "connector_tab": "outbound" }
+    },
+    {
+      "id": "hubspot",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "HubSpot",
+      "tagline": "Contacts, deals & pipeline follow-ups",
+      "description": "Keep deal notes updated, prep call briefs, and approve CRM stage or email actions.",
+      "mode": "cloud",
+      "transport": "mcp",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "run_tool", "label": "Query CRM deals", "description": "Read contacts, companies, and pipeline deals.", "access": "read", "requires_approval": false },
+        { "name": "write_action", "label": "Update CRM record", "description": "Log notes or update deals in HubSpot (parks approval).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": { "api_base_url": "https://mcp.hubspot.com/anthropic", "match_hosts": ["mcp.hubspot.com", "api.hubapi.com"], "connector_tab": "mcp" },
+      "install_spec": {
+        "transport": "http_sse",
+        "command_or_url": "https://mcp.hubspot.com/anthropic",
+        "args": [],
+        "credential_fields": [
+          { "key": "HUBSPOT_ACCESS_TOKEN", "label": "HubSpot Private App Token", "description": "Private app access token with CRM read/write scopes.", "is_secret": true, "is_required": true, "kind": "bearer" }
+        ]
+      }
+    },
+    {
+      "id": "salesforce",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "Salesforce",
+      "tagline": "Accounts, opportunities & case triage",
+      "description": "Query accounts and opportunity history while gating CRM mutations behind /phone approval.",
+      "mode": "cloud",
+      "transport": "oauth2_rest",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "run_tool", "label": "Query opportunities", "description": "Read accounts, leads, and opportunities.", "access": "read", "requires_approval": false },
+        { "name": "write_action", "label": "Update opportunity", "description": "Write CRM updates to Salesforce (parks approval).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": { "api_base_url": "https://login.salesforce.com", "match_hosts": ["salesforce.com"], "connector_tab": "outbound" }
+    },
+    {
+      "id": "stripe",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "Stripe",
+      "tagline": "Invoices, subscriptions & payout checks",
+      "description": "Reconcile invoices and payout balances alongside local ledger tools with strict write gating.",
+      "mode": "cloud",
+      "transport": "mcp",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "run_tool", "label": "Inspect invoices", "description": "Read customers, charges, and Stripe invoices.", "access": "read", "requires_approval": false },
+        { "name": "write_action", "label": "Issue invoice / refund", "description": "Execute financial Stripe action (parks Approve/Deny card).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": { "api_base_url": "https://mcp.stripe.com", "match_hosts": ["mcp.stripe.com", "api.stripe.com"], "connector_tab": "mcp" },
+      "install_spec": {
+        "transport": "http_sse",
+        "command_or_url": "https://mcp.stripe.com",
+        "args": [],
+        "credential_fields": [
+          { "key": "STRIPE_API_KEY", "label": "Stripe Restricted Key", "description": "Restricted key (read/invoice scope recommended).", "is_secret": true, "is_required": true, "kind": "bearer" }
+        ]
+      }
+    },
+    {
+      "id": "quickbooks",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "QuickBooks Online",
+      "tagline": "Chart of accounts, bills & P&L reconciliation",
+      "description": "Pair QuickBooks Online ledgers with Ergon's penny-exact i128 reconciliation workflows.",
+      "mode": "cloud",
+      "transport": "oauth2_rest",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "run_tool", "label": "Read ledger & bills", "description": "Query accounts, bills, and profit/loss items.", "access": "read", "requires_approval": false },
+        { "name": "write_action", "label": "Post journal / invoice", "description": "Sync approved invoice to QuickBooks (parks approval).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": { "api_base_url": "https://quickbooks.api.intuit.com", "match_hosts": ["quickbooks.api.intuit.com"], "connector_tab": "outbound" }
+    },
+    {
+      "id": "zendesk",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "Zendesk",
+      "tagline": "Support queues, ticket triage & drafted replies",
+      "description": "Summarize customer tickets, draft accurate answers locally, and gate public replies.",
+      "mode": "cloud",
+      "transport": "oauth2_rest",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "run_tool", "label": "Triage tickets", "description": "Fetch open customer tickets from Zendesk.", "access": "read", "requires_approval": false },
+        { "name": "write_action", "label": "Post public reply", "description": "Send reply to customer ticket (parks Approve/Deny card).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": { "api_base_url": "https://api.zendesk.com", "match_hosts": ["zendesk.com"], "connector_tab": "outbound" }
+    },
+    {
+      "id": "airtable",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "Airtable",
+      "tagline": "Bases, tables & ops inventory sync",
+      "description": "Read operational bases into local spreadsheets and approve record updates cleanly.",
+      "mode": "cloud",
+      "transport": "oauth2_rest",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "run_tool", "label": "List bases & records", "description": "Query Airtable tables and records.", "access": "read", "requires_approval": false },
+        { "name": "write_action", "label": "Update record", "description": "Write Airtable row updates (parks approval).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": { "api_base_url": "https://api.airtable.com/v0", "match_hosts": ["api.airtable.com"], "connector_tab": "outbound" }
+    },
+    {
+      "id": "shopify",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "Shopify",
+      "tagline": "Orders, SKUs & fulfillment summaries",
+      "description": "Reconcile store orders, catalog inventory, and vendor BOMs with human-gated updates.",
+      "mode": "cloud",
+      "transport": "oauth2_rest",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "run_tool", "label": "Read orders & SKUs", "description": "Query Shopify orders and inventory counts.", "access": "read", "requires_approval": false },
+        { "name": "write_action", "label": "Update order / SKU", "description": "Modify Shopify order or catalog entry (parks approval).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": { "api_base_url": "https://admin.shopify.com", "match_hosts": ["myshopify.com", "shopify.com"], "connector_tab": "outbound" }
+    },
+    {
+      "id": "postgres-sqlite",
+      "suite": "business",
+      "suite_label": "Business Apps",
+      "name": "Postgres & SQLite",
+      "tagline": "Local or cloud SQL queries & CSV exports",
+      "description": "Run read-only SQL queries against internal databases and materialize verified CSV/Excel reports.",
+      "mode": "hybrid",
+      "transport": "mcp",
+      "local_ready": false,
+      "default_enabled": false,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "run_tool", "label": "Run SQL query", "description": "Query tables via configured SQL server.", "access": "read", "requires_approval": false },
+        { "name": "write_action", "label": "Execute SQL mutation", "description": "Run write query (parks Approve/Deny card).", "access": "write", "requires_approval": true }
+      ],
+      "connect_preset": { "connector_tab": "mcp" },
+      "install_spec": {
+        "transport": "stdio",
+        "command_or_url": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-postgres"],
+        "credential_fields": [
+          { "key": "POSTGRES_CONNECTION_STRING", "label": "Postgres Connection URL", "description": "Read-only postgresql:// URI stored encrypted in Ergon's vault.", "is_secret": true, "is_required": true, "kind": "env" }
+        ]
+      }
+    },
+
+    {
+      "id": "local-workspace-files",
+      "suite": "local",
+      "suite_label": "On-Device Local",
+      "name": "On-Device Files & Watched Folders",
+      "tagline": "100% offline sandboxed workspace & folder triggers",
+      "description": "Active by default on-device: reads, searches, and watches local folders inside Tripwire path confinement.",
+      "mode": "local",
+      "transport": "local_builtin",
+      "local_ready": true,
+      "default_enabled": true,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "list_workspace", "label": "List workspace files", "description": "Inspect files in the employee's sandboxed on-device workspace.", "access": "read", "requires_approval": false },
+        { "name": "search_files", "label": "Search workspace", "description": "Search across workspace text, CSV, Word, and PDF documents locally.", "access": "read", "requires_approval": false },
+        { "name": "watch_folder_status", "label": "Watched folders", "description": "List active local watched directories routing files to routines.", "access": "read", "requires_approval": false }
+      ],
+      "connect_preset": null
+    },
+    {
+      "id": "local-mcp-bridge",
+      "suite": "local",
+      "suite_label": "On-Device Local",
+      "name": "Local Apps & MCP Bridge",
+      "tagline": "Connect any desktop CLI, database, or MCP server",
+      "description": "Active by default on-device: discovers stdio and HTTP MCP tools with optional /phone approval gates.",
+      "mode": "local",
+      "transport": "mcp",
+      "local_ready": true,
+      "default_enabled": true,
+      "version": "1.0.0",
+      "actions": [
+        { "name": "list_mcp_tools", "label": "List MCP tools", "description": "List discovered tools from local or HTTP MCP servers.", "access": "read", "requires_approval": false }
+      ],
+      "connect_preset": { "connector_tab": "mcp" }
+    }
+  ]
+}

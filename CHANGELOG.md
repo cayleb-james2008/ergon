@@ -4,6 +4,13 @@ Each release is tagged `vMAJOR.MINOR.PATCH` and published on GitHub Releases wit
 binaries and a `SHA256SUMS` file. The running app shows its version and can update
 itself from the newest release (see README, "Versions and updates").
 
+## 0.45.0 - 2026-11-28
+
+Expanded Ergon's built-in app library into an auto-updating 32-app + Official MCP Registry platform and introduced **Simple vs Advanced UI mode (defaulting to Simple)** so non-technical employees experience Ergon as simply talking to their computer and watching magic happen in real time.
+
+- **Auto-Updating 32-App Baseline & Live Directory (`catalog/plugins.json`, `src/plugin_registry.rs`, `src/plugins.rs`, `src/server/routes_system.rs`, `src/auth.rs`, `tests/plugin_registry_auto_update.rs`):** Expanded the embedded workplace baseline from 18 to **32** curated apps (adding Linear, Jira, Asana, Confluence, Figma, Zoom, HubSpot, Salesforce, Stripe, QuickBooks Online, Zendesk, Airtable, Shopify, and Postgres & SQLite across Google Workspace, Microsoft 365 & Outlook, Business Apps, and On-Device Local). Added configurable auto-sync against `ergon_manifest` feeds and the Official MCP Registry v0.1 (`GET /api/plugins/registry`, `PUT /api/plugins/registry/config`, `POST /api/plugins/registry/sync`, `GET /api/plugins/registry/search`, `POST /api/plugins/registry/install`, `POST /api/plugins/registry/uninstall`) with `0600` SHA-256 caching, strict command/deprecated-server filtering, 1-click encrypted credential installation into `secrets.enc.json` (`require_approval_by_default: true`), and `Air-Gapped` `403` enforcement.
+- **Simple vs Advanced UI Mode & Real-Time Narration (`frontend/src/App.tsx`, `frontend/src/chat/Chat.tsx`, `frontend/src/chat/LiveRunTimeline.tsx`, `frontend/src/chat/Entry.tsx`, `frontend/src/shell/SettingsPanel.tsx`, `frontend/src/shell/PluginsPanel.tsx`, `frontend/src/lib/webEngine.ts`):** Added a persistent `Simple` / `Advanced` interface mode defaulting to `Simple` (switchable anytime via the left-rail toggle or Settings). Simple mode streamlines navigation (`Chat` + `Today`, `Files`, and 4 everyday rail buttons), keeps the home canvas centered on plain-English conversation, shows a smooth progress rail + plain-English present-tense live step narration while the agent works, tucks technical receipts/details behind expandable controls, and brings 32 baseline apps + directory sync/search/install and live step pacing to the standalone browser demo (`ergon-web.html`).
+
 ## 0.44.0 - 2026-11-27
 
 Added one-click browser OAuth2 (PKCE `S256`) sign-in and native Google Workspace & Microsoft Graph REST adapters across the 18-plugin workplace library, plus CI/lint polish.

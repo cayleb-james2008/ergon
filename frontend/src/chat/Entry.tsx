@@ -31,14 +31,14 @@ export function FileGlyph({ name, className }: { name: string; className?: strin
 }
 
 /** Accessible collapsible disclosure without heavy animation runtime dependencies. */
-export function Details({ label = "Details", children }: { label?: string; children: React.ReactNode }) {
+export function Details({ label = "Details", ariaLabel, children }: { label?: string; ariaLabel?: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="w-full">
       <button
         type="button"
         aria-expanded={open}
-        aria-label={label}
+        aria-label={ariaLabel || label}
         onClick={() => setOpen((v) => !v)}
         className="focus-ring flex min-h-11 w-full items-center justify-between gap-2 rounded-sm border border-hairline bg-board/40 px-3 text-left text-sm font-medium text-ink outline-none hover:bg-board md:min-h-9"
       >
@@ -238,6 +238,7 @@ export const FinishedEntry = memo(function FinishedEntry({
   receiptId,
   personName,
   useServerExport,
+  uiMode = "simple",
   onOpenFile,
   onSaveRoutine,
 }: {
@@ -249,6 +250,7 @@ export const FinishedEntry = memo(function FinishedEntry({
   receiptId?: string;
   personName?: string;
   useServerExport?: boolean;
+  uiMode?: "simple" | "advanced";
   onOpenFile?: (path: string) => void;
   onSaveRoutine?: (
     name: string,
@@ -257,6 +259,7 @@ export const FinishedEntry = memo(function FinishedEntry({
     playbook?: { steps?: string[]; expected_inputs?: string[]; pack_deliverables?: boolean }
   ) => Promise<boolean>;
 }) {
+  const simpleMode = uiMode === "simple";
   const [exporting, setExporting] = useState(false);
   const [packing, setPacking] = useState(false);
   const [packPreflight, setPackPreflight] = useState<PackPreflightReport | null>(null);
@@ -347,10 +350,12 @@ export const FinishedEntry = memo(function FinishedEntry({
 
   return (
     <EntryShell label="Finished work" time={time} title={task || "Completed task"} status={<FinishedPill />}>
-      <Cells>
-        <Cell label="Execution"><span className="mono">{steps.length ? stepWord : "Direct completion"}</span></Cell>
-        <Cell label="Workspace output"><span className="mono">{files.length ? (files.length === 1 ? "1 file saved" : `${files.length} files saved`) : "No new files"}</span></Cell>
-      </Cells>
+      {!simpleMode && (
+        <Cells>
+          <Cell label="Execution"><span className="mono">{steps.length ? stepWord : "Direct completion"}</span></Cell>
+          <Cell label="Workspace output"><span className="mono">{files.length ? (files.length === 1 ? "1 file saved" : `${files.length} files saved`) : "No new files"}</span></Cell>
+        </Cells>
+      )}
       <FileRow files={files} onOpenFile={onOpenFile} />
       <div className="flex flex-col gap-3 px-4 py-4">
         <p className="whitespace-pre-wrap break-words text-ui leading-6 text-ink">
@@ -392,7 +397,7 @@ export const FinishedEntry = memo(function FinishedEntry({
               onClick={() => handleOfficeExport(docCandidate, "docx")}
             >
               <FileText className="size-3.5" strokeWidth={1.5} aria-hidden />
-              Export Word (.docx)
+              {simpleMode ? "Download Word (.docx)" : "Export Word (.docx)"}
             </Button>
           )}
           {sheetCandidate && (
@@ -405,91 +410,95 @@ export const FinishedEntry = memo(function FinishedEntry({
               onClick={() => handleOfficeExport(sheetCandidate, "xlsx")}
             >
               <FileSpreadsheet className="size-3.5" strokeWidth={1.5} aria-hidden />
-              Export Excel (.xlsx)
+              {simpleMode ? "Download Excel (.xlsx)" : "Export Excel (.xlsx)"}
             </Button>
           )}
-          <Button
-            type="button"
-            size="xs"
-            variant="outline"
-            className="max-md:min-h-11 gap-1.5 text-xs"
-            disabled={exporting}
-            onClick={() => handleExport("md")}
-          >
-            <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
-            SHA-256 Receipt (.md)
-          </Button>
-          <Button
-            type="button"
-            size="xs"
-            variant="outline"
-            className="max-md:min-h-11 gap-1.5 text-xs"
-            disabled={exporting}
-            onClick={() => handleExport("json")}
-          >
-            <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
-            Receipt (.json)
-          </Button>
-          {files.length >= 2 && (
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              className="max-md:min-h-11 gap-1.5 text-xs"
-              disabled={packing}
-              onClick={async () => {
-                setPacking(true);
-                try {
-                  const [check, res] = await Promise.all([
-                    preflightClientPack(files).catch(() => null),
-                    exportClientPackDownload(files, task || "Client Deliverable Pack"),
-                  ]);
-                  if (check) setPackPreflight(check);
-                  const checkLabel = check
-                    ? `${check.ready_count}/${check.files.length} non-empty`
-                    : res.preflight || "verified";
-                  toast.success(`Exported ${res.filename} (${checkLabel} · sha256: ${res.sha256.slice(0, 12)}…)`);
-                } catch {
-                  toast.error("Could not export client pack.");
-                } finally {
-                  setPacking(false);
-                }
-              }}
-            >
-              <PackageCheck className="size-3.5" strokeWidth={1.5} aria-hidden />
-              {packing ? "Packing…" : "Client Pack (.md)"}
-            </Button>
-          )}
-          {onSaveRoutine && task.trim() && (
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              data-action="promote-playbook"
-              className="max-md:min-h-11 gap-1.5 text-xs"
-              disabled={savingRoutine || routineSaved}
-              onClick={async () => {
-                setSavingRoutine(true);
-                try {
-                  const pb = extractPlaybookFromRun(task, steps, files);
-                  const ok = await onSaveRoutine(pb.name, pb.prompt, "manual", {
-                    steps: pb.steps,
-                    expected_inputs: pb.expected_inputs,
-                    pack_deliverables: pb.pack_deliverables,
-                  });
-                  if (ok) setRoutineSaved(true);
-                } finally {
-                  setSavingRoutine(false);
-                }
-              }}
-            >
-              {routineSaved ? (
-                <Check className="size-3.5 text-dot-green" strokeWidth={1.75} aria-hidden />
-              ) : (
-                <Repeat className="size-3.5" strokeWidth={1.5} aria-hidden />
+          {!simpleMode && (
+            <>
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                className="max-md:min-h-11 gap-1.5 text-xs"
+                disabled={exporting}
+                onClick={() => handleExport("md")}
+              >
+                <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
+                SHA-256 Receipt (.md)
+              </Button>
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                className="max-md:min-h-11 gap-1.5 text-xs"
+                disabled={exporting}
+                onClick={() => handleExport("json")}
+              >
+                <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
+                Receipt (.json)
+              </Button>
+              {files.length >= 2 && (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  className="max-md:min-h-11 gap-1.5 text-xs"
+                  disabled={packing}
+                  onClick={async () => {
+                    setPacking(true);
+                    try {
+                      const [check, res] = await Promise.all([
+                        preflightClientPack(files).catch(() => null),
+                        exportClientPackDownload(files, task || "Client Deliverable Pack"),
+                      ]);
+                      if (check) setPackPreflight(check);
+                      const checkLabel = check
+                        ? `${check.ready_count}/${check.files.length} non-empty`
+                        : res.preflight || "verified";
+                      toast.success(`Exported ${res.filename} (${checkLabel} · sha256: ${res.sha256.slice(0, 12)}…)`);
+                    } catch {
+                      toast.error("Could not export client pack.");
+                    } finally {
+                      setPacking(false);
+                    }
+                  }}
+                >
+                  <PackageCheck className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  {packing ? "Packing…" : "Client Pack (.md)"}
+                </Button>
               )}
-              {routineSaved ? "Promoted to Playbook" : savingRoutine ? "Saving…" : "Promote to Playbook"}
-            </Button>
+              {onSaveRoutine && task.trim() && (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  data-action="promote-playbook"
+                  className="max-md:min-h-11 gap-1.5 text-xs"
+                  disabled={savingRoutine || routineSaved}
+                  onClick={async () => {
+                    setSavingRoutine(true);
+                    try {
+                      const pb = extractPlaybookFromRun(task, steps, files);
+                      const ok = await onSaveRoutine(pb.name, pb.prompt, "manual", {
+                        steps: pb.steps,
+                        expected_inputs: pb.expected_inputs,
+                        pack_deliverables: pb.pack_deliverables,
+                      });
+                      if (ok) setRoutineSaved(true);
+                    } finally {
+                      setSavingRoutine(false);
+                    }
+                  }}
+                >
+                  {routineSaved ? (
+                    <Check className="size-3.5 text-dot-green" strokeWidth={1.75} aria-hidden />
+                  ) : (
+                    <Repeat className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  )}
+                  {routineSaved ? "Promoted to Playbook" : savingRoutine ? "Saving…" : "Promote to Playbook"}
+                </Button>
+              )}
+            </>
           )}
           <Button
             type="button"
@@ -499,9 +508,98 @@ export const FinishedEntry = memo(function FinishedEntry({
             onClick={() => void handleCopySummary()}
           >
             <Copy className="size-3.5" strokeWidth={1.5} aria-hidden />
-            Copy summary
+            {simpleMode ? "Copy" : "Copy summary"}
           </Button>
         </div>
+        {simpleMode && (
+          <Details label="Receipts & save as routine">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                className="max-md:min-h-11 gap-1.5 text-xs"
+                disabled={exporting}
+                onClick={() => handleExport("md")}
+              >
+                <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
+                SHA-256 Receipt (.md)
+              </Button>
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                className="max-md:min-h-11 gap-1.5 text-xs"
+                disabled={exporting}
+                onClick={() => handleExport("json")}
+              >
+                <FileDown className="size-3.5" strokeWidth={1.5} aria-hidden />
+                Receipt (.json)
+              </Button>
+              {files.length >= 2 && (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  className="max-md:min-h-11 gap-1.5 text-xs"
+                  disabled={packing}
+                  onClick={async () => {
+                    setPacking(true);
+                    try {
+                      const [check, res] = await Promise.all([
+                        preflightClientPack(files).catch(() => null),
+                        exportClientPackDownload(files, task || "Client Deliverable Pack"),
+                      ]);
+                      if (check) setPackPreflight(check);
+                      const checkLabel = check
+                        ? `${check.ready_count}/${check.files.length} non-empty`
+                        : res.preflight || "verified";
+                      toast.success(`Exported ${res.filename} (${checkLabel} · sha256: ${res.sha256.slice(0, 12)}…)`);
+                    } catch {
+                      toast.error("Could not export client pack.");
+                    } finally {
+                      setPacking(false);
+                    }
+                  }}
+                >
+                  <PackageCheck className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  {packing ? "Packing…" : "Client Pack (.md)"}
+                </Button>
+              )}
+              {onSaveRoutine && task.trim() && (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  data-action="promote-playbook"
+                  className="max-md:min-h-11 gap-1.5 text-xs"
+                  disabled={savingRoutine || routineSaved}
+                  onClick={async () => {
+                    setSavingRoutine(true);
+                    try {
+                      const pb = extractPlaybookFromRun(task, steps, files);
+                      const ok = await onSaveRoutine(pb.name, pb.prompt, "manual", {
+                        steps: pb.steps,
+                        expected_inputs: pb.expected_inputs,
+                        pack_deliverables: pb.pack_deliverables,
+                      });
+                      if (ok) setRoutineSaved(true);
+                    } finally {
+                      setSavingRoutine(false);
+                    }
+                  }}
+                >
+                  {routineSaved ? (
+                    <Check className="size-3.5 text-dot-green" strokeWidth={1.75} aria-hidden />
+                  ) : (
+                    <Repeat className="size-3.5" strokeWidth={1.5} aria-hidden />
+                  )}
+                  {routineSaved ? "Saved as routine" : savingRoutine ? "Saving…" : "Save as routine"}
+                </Button>
+              )}
+            </div>
+          </Details>
+        )}
         {packPreflight && (
           <div className="rounded-sm border border-hairline bg-board/50 px-3 py-2 text-xs text-ink-2">
             <span className="font-medium text-ink">
@@ -512,7 +610,10 @@ export const FinishedEntry = memo(function FinishedEntry({
           </div>
         )}
         {steps.length > 0 && (
-          <Details label={`Inspect tool steps (${steps.length})`}>
+          <Details
+            label={simpleMode ? `How Ergon did this (${steps.length} steps)` : `Inspect tool steps (${steps.length})`}
+            ariaLabel={`Inspect tool steps (${steps.length})`}
+          >
             <StepList steps={steps} />
           </Details>
         )}

@@ -107,9 +107,21 @@ const ok = (name, pass, detail = "") => {
   console.log((pass ? "PASS " : "FAIL ") + name + (detail ? "  " + detail : ""));
 };
 
+let DEFAULT_UI_MODE = null;
+
 async function open(w, h, theme = "light", extra = {}) {
-  const ctx = await b.newContext({ viewport: { width: w, height: h }, colorScheme: theme, hasTouch: w < 768, ...extra });
-  await ctx.addInitScript((t) => { try { localStorage.setItem("ergon-theme", t); } catch {} }, theme);
+  const { uiMode = DEFAULT_UI_MODE, ...ctxOpts } = extra;
+  const ctx = await b.newContext({ viewport: { width: w, height: h }, colorScheme: theme, hasTouch: w < 768, ...ctxOpts });
+  await ctx.addInitScript(
+    ({ t, m }) => {
+      try {
+        localStorage.setItem("ergon-theme", t);
+        if (m) localStorage.setItem("ergon-ui-mode", m);
+        else localStorage.removeItem("ergon-ui-mode");
+      } catch {}
+    },
+    { t: theme, m: uiMode }
+  );
   const p = await ctx.newPage();
   p.on("pageerror", (e) => errs.push(`${w}-${theme}: pageerror ${e.message}`));
   p.on("console", (m) => {
@@ -163,7 +175,7 @@ for (const m of measures) {
   );
 }
 
-// 2. Desktop Workbench Interactions (Chat default + inline Approve/Diff -> Today -> Work Graph -> Shortcuts -> Panels -> Team -> Offer -> Theme)
+// 2. Simple-by-default & Auto-Updating Apps check, then Advanced Workbench Interactions
 await reset();
 {
   const { ctx, p } = await open(1440, 900);
@@ -171,6 +183,40 @@ await reset();
   await p.goto(BASE);
   await statusLoaded;
   await waitWorkbench(p);
+
+  const defaultIsSimple = await p.evaluate(() => document.documentElement.dataset.uiMode === "simple");
+  const simpleTabsClean =
+    (await p.locator('[role="tab"][data-id="chat"]').isVisible()) &&
+    (await p.locator('[role="tab"][data-id="paper"]').isVisible()) &&
+    (await p.locator('[role="tab"][data-id="graph"]').count()) === 0 &&
+    (await p.locator('[data-thing="skills-btn"]').count()) === 0 &&
+    (await p.locator('[data-thing="connectors-btn"]').count()) === 0;
+  await p.locator('[data-thing="plugins-btn"]').click();
+  await p.waitForSelector("#plugins-panel", { timeout: 4000 });
+  await p.waitForSelector("#plugins-panel [data-plugin-id]", { timeout: 4000 });
+  const appCardsCount = await p.locator("#plugins-panel [data-plugin-id]").count();
+  const hasSyncBtn = await p.locator("#plugins-sync-now-btn").isVisible();
+  await p.keyboard.press("Escape");
+  await p.locator("#plugins-panel").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+
+  // Switch Simple -> Advanced via rail toggle, confirm Work Graph & Workflows appear, test Settings mode switch back & forth
+  await p.locator("#ui-mode-toggle").click();
+  await p.waitForSelector('[role="tab"][data-id="graph"]', { timeout: 4000 });
+  const switchedAdv = await p.evaluate(() => document.documentElement.dataset.uiMode === "advanced");
+  await p.locator('[data-thing="settings-btn"]').click();
+  await p.waitForSelector('#settings-panel [aria-label="Interface mode"]', { timeout: 4000 });
+  await p.locator('#settings-panel [aria-label="Interface mode"] [data-id="simple"]').click();
+  await p.locator('[role="tab"][data-id="graph"]').waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+  const backSimple = await p.evaluate(() => document.documentElement.dataset.uiMode === "simple");
+  await p.locator('#settings-panel [aria-label="Interface mode"] [data-id="advanced"]').click();
+  await p.waitForSelector('[role="tab"][data-id="graph"]', { timeout: 4000 });
+  await p.keyboard.press("Escape");
+  await p.locator("#settings-panel").waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
+  ok(
+    "Simple mode is default, Connected Apps loads 32+ auto-updating apps, and Simple/Advanced switches cleanly",
+    defaultIsSimple && simpleTabsClean && appCardsCount >= 32 && hasSyncBtn && switchedAdv && backSimple,
+    `simple=${defaultIsSimple} clean=${simpleTabsClean} apps=${appCardsCount} sync=${hasSyncBtn} adv=${switchedAdv} backSimple=${backSimple}`
+  );
 
   const starterCount0 = await p.locator('section[aria-label="Start a task"] button[data-starter-card]').count();
   const inspectorInitiallyHidden = !(await p.locator("#workspace-inspector").isVisible());
@@ -454,7 +500,8 @@ await reset();
   await ctx.close();
 }
 
-// 3. Keep path + empty person
+// 3. Keep path + empty person (and Advanced Workbench checks below)
+DEFAULT_UI_MODE = "advanced";
 await reset();
 {
   const { ctx, p } = await open(1440, 900);
@@ -4768,6 +4815,7 @@ for (const [theme, vw, vh] of [
 }
 
 // 7. Reduced motion & Console Cleanliness (2 checks)
+DEFAULT_UI_MODE = null;
 {
   const { ctx, p } = await open(1440, 900, "light", { reducedMotion: "reduce" });
   const statusLoaded = p.waitForResponse((r) => r.url().includes("/api/status"));

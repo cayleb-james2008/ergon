@@ -1,19 +1,19 @@
-//! Default App Plugin Library + Hybrid Cloud/Local Runtime.
+//! Default App Plugin Library + Auto-Updating Catalog & Hybrid Cloud/Local Runtime.
 //!
-//! Ergon ships with a curated catalog of common company and employee apps across:
-//! - **Google Workspace** (Gmail, Calendar, Drive, Docs, Sheets, Slides)
-//! - **Microsoft 365 & Outlook** (Outlook Mail, Outlook Calendar, OneDrive & SharePoint, Teams, Excel, Word & PDF)
-//! - **Business Apps** (Slack, Notion, GitHub, CRM & Billing)
-//! - **On-Device Local** (On-Device Files & Watched Folders, Local Apps & MCP Bridge)
+//! Ergon loads its curated baseline catalog (`catalog/plugins.json`, 32 workplace
+//! apps across Google Workspace, Microsoft 365 & Outlook, Business Apps, and On-Device Local)
+//! and merges in live curated catalog updates and Official MCP Registry community apps
+//! from `crate::plugin_registry`.
 //!
-//! Plugins run **locally on-device** when offline-capable (Office files, spreadsheets, workspace search,
-//! local MCP bridge) or seamlessly switch to **cloud** mode once bound to Connectors / OAuth2 credentials.
-//! Consequential external writes always park as Approve/Deny cards on `/phone` and Today instead of firing silently.
+//! Plugins run **locally on-device** when offline-capable or switch seamlessly to **cloud** mode
+//! once bound to one-click OAuth2, Connectors, or 1-click installed apps (`install_plugin`).
+//! Consequential external writes always park as Approve/Deny cards on `/phone` and Today.
 
+use crate::plugin_registry::{self, DynamicPluginSpec};
 use crate::tools::atomic_write_bytes_with_mode;
-use crate::{connectors, mcp, parse_url_host_port, records, Config};
+use crate::{connectors, mcp, parse_url_host_port, plugin_cloud, records, Config};
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -26,75 +26,6 @@ fn with_plugins_lock<T>(f: impl FnOnce() -> T) -> T {
 
 pub fn plugins_path(person_data_dir: &Path) -> PathBuf {
     person_data_dir.join("plugins.json")
-}
-
-#[derive(Clone, Debug)]
-pub struct PluginActionSpec {
-    pub name: &'static str,
-    pub label: &'static str,
-    pub description: &'static str,
-    pub access: &'static str, // "read" | "write"
-    pub requires_approval: bool,
-}
-
-impl PluginActionSpec {
-    pub fn to_json(&self) -> Value {
-        json!({
-            "name": self.name,
-            "label": self.label,
-            "description": self.description,
-            "access": self.access,
-            "requires_approval": self.requires_approval,
-        })
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct PluginConnectPreset {
-    pub api_base_url: Option<&'static str>,
-    pub oauth_token_url: Option<&'static str>,
-    pub oauth_scopes: Option<&'static str>,
-    pub smtp_host: Option<&'static str>,
-    pub smtp_port: Option<u16>,
-    pub smtp_security: Option<&'static str>,
-    pub imap_host: Option<&'static str>,
-    pub imap_port: Option<u16>,
-    pub imap_security: Option<&'static str>,
-    pub match_hosts: &'static [&'static str],
-    pub connector_tab: &'static str, // "folders" | "outbound" | "mcp"
-}
-
-impl PluginConnectPreset {
-    pub fn to_json(&self) -> Value {
-        json!({
-            "api_base_url": self.api_base_url,
-            "oauth_token_url": self.oauth_token_url,
-            "oauth_scopes": self.oauth_scopes,
-            "smtp_host": self.smtp_host,
-            "smtp_port": self.smtp_port,
-            "smtp_security": self.smtp_security,
-            "imap_host": self.imap_host,
-            "imap_port": self.imap_port,
-            "imap_security": self.imap_security,
-            "connector_tab": self.connector_tab,
-        })
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct PluginSpec {
-    pub id: &'static str,
-    pub suite: &'static str,       // "google" | "microsoft" | "business" | "local"
-    pub suite_label: &'static str,
-    pub name: &'static str,
-    pub tagline: &'static str,
-    pub description: &'static str,
-    pub mode: &'static str,      // "local" | "cloud" | "hybrid"
-    pub transport: &'static str, // "local_builtin" | "smtp_imap_xoauth2" | "oauth2_rest" | "mcp"
-    pub local_ready: bool,
-    pub default_enabled: bool,
-    pub actions: &'static [PluginActionSpec],
-    pub connect_preset: Option<PluginConnectPreset>,
 }
 
 #[derive(Clone, Debug)]
@@ -129,9 +60,43 @@ impl PluginPersonSetting {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct InstalledPluginRecord {
+    pub plugin_id: String,
+    pub mcp_server_id: String,
+    pub installed_ms: u64,
+    pub spec: DynamicPluginSpec,
+}
+
+impl InstalledPluginRecord {
+    fn from_json(id: &str, v: &Value) -> Option<Self> {
+        let mcp_server_id = v["mcp_server_id"].as_str()?.trim().to_string();
+        if mcp_server_id.is_empty() {
+            return None;
+        }
+        let spec = DynamicPluginSpec::from_json(&v["spec"], "community_registry")?;
+        Some(Self {
+            plugin_id: id.to_string(),
+            mcp_server_id,
+            installed_ms: v["installed_ms"].as_u64().unwrap_or(0),
+            spec,
+        })
+    }
+
+    fn to_json(&self) -> Value {
+        json!({
+            "plugin_id": self.plugin_id,
+            "mcp_server_id": self.mcp_server_id,
+            "installed_ms": self.installed_ms,
+            "spec": self.spec.to_storage_json(),
+        })
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct PluginsStore {
     pub settings: BTreeMap<String, PluginPersonSetting>,
+    pub installed: BTreeMap<String, InstalledPluginRecord>,
 }
 
 impl PluginsStore {
@@ -143,812 +108,93 @@ impl PluginsStore {
         let Ok(val) = serde_json::from_str::<Value>(&raw) else {
             return Self::default();
         };
-        let mut settings = BTreeMap::new();
-        if let Some(obj) = val["settings"].as_object() {
+        let mut installed = BTreeMap::new();
+        if let Some(obj) = val["installed"].as_object() {
             for (k, v) in obj {
-                if let Some(spec) = find_plugin(k) {
-                    settings.insert(k.clone(), PluginPersonSetting::from_json(v, spec.default_enabled));
+                if let Some(rec) = InstalledPluginRecord::from_json(k, v) {
+                    installed.insert(k.clone(), rec);
                 }
             }
         }
-        Self { settings }
+        let baseline = plugin_registry::embedded_baseline();
+        let mut settings = BTreeMap::new();
+        if let Some(obj) = val["settings"].as_object() {
+            for (k, v) in obj {
+                let default_enabled = installed
+                    .get(k.as_str())
+                    .map(|r| r.spec.default_enabled)
+                    .or_else(|| {
+                        baseline
+                            .iter()
+                            .find(|p| p.id == k.as_str())
+                            .map(|p| p.default_enabled)
+                    })
+                    .unwrap_or(false);
+                settings.insert(k.clone(), PluginPersonSetting::from_json(v, default_enabled));
+            }
+        }
+        Self { settings, installed }
     }
 
     fn save_unlocked(&self, person_data_dir: &Path) -> Result<(), String> {
-        let mut obj = serde_json::Map::new();
+        let mut settings_obj = serde_json::Map::new();
         for (k, v) in &self.settings {
-            obj.insert(k.clone(), v.to_json());
+            settings_obj.insert(k.clone(), v.to_json());
         }
-        let body = serde_json::to_string_pretty(&json!({ "settings": obj }))
-            .map_err(|e| format!("serialize plugins: {e}"))?;
+        let mut installed_obj = serde_json::Map::new();
+        for (k, v) in &self.installed {
+            installed_obj.insert(k.clone(), v.to_json());
+        }
+        let body = serde_json::to_string_pretty(&json!({
+            "settings": settings_obj,
+            "installed": installed_obj,
+        }))
+        .map_err(|e| format!("serialize plugins: {e}"))?;
         atomic_write_bytes_with_mode(&plugins_path(person_data_dir), body.as_bytes(), Some(0o600))
             .map_err(|e| format!("write plugins.json: {e}"))
     }
 }
 
-const GMAIL_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "read_inbox",
-        label: "Read inbox",
-        description: "Poll unread Gmail messages into workspace/intake/ via IMAPS XOAUTH2.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "draft_reply",
-        label: "Draft reply",
-        description: "Compose a local Markdown email draft inside the workspace.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "send_mail",
-        label: "Send email",
-        description: "Send email via Gmail SMTP XOAUTH2 (parks Approve/Deny card).",
-        access: "write",
-        requires_approval: true,
-    },
-];
-
-const GCAL_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "list_events",
-        label: "List events",
-        description: "Fetch upcoming Google Calendar schedule.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "create_event",
-        label: "Create event",
-        description: "Schedule or update a calendar invite (parks Approve/Deny card).",
-        access: "write",
-        requires_approval: true,
-    },
-];
-
-const GDRIVE_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "list_files",
-        label: "List files",
-        description: "List synced Drive folders in Google Cloud or on-device workspace.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "upload_deliverable",
-        label: "Upload file",
-        description: "Upload a workspace deliverable to Drive (parks Approve/Deny card).",
-        access: "write",
-        requires_approval: true,
-    },
-];
-
-const GDOCS_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "draft_doc",
-        label: "Draft document",
-        description: "Create a structured Markdown or Word draft in the local workspace.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "publish_doc",
-        label: "Publish to Docs",
-        description: "Sync document to Google Docs (parks Approve/Deny card).",
-        access: "write",
-        requires_approval: true,
-    },
-];
-
-const GSHEETS_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "reconcile_sheet",
-        label: "Build / reconcile sheet",
-        description: "Run deterministic exact-decimal table rollups locally in the workspace.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "update_range",
-        label: "Push range update",
-        description: "Write rows to Google Sheets (parks Approve/Deny card).",
-        access: "write",
-        requires_approval: true,
-    },
-];
-
-const GSLIDES_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "draft_outline",
-        label: "Draft deck outline",
-        description: "Draft a slide-by-slide Markdown outline locally in the workspace.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "update_deck",
-        label: "Publish slides",
-        description: "Update a Google Slides presentation (parks Approve/Deny card).",
-        access: "write",
-        requires_approval: true,
-    },
-];
-
-const OUTLOOK_MAIL_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "read_inbox",
-        label: "Read inbox",
-        description: "Poll unread Outlook / Microsoft 365 messages via IMAPS XOAUTH2.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "draft_reply",
-        label: "Draft reply",
-        description: "Compose an Outlook reply draft locally inside the workspace.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "send_mail",
-        label: "Send email",
-        description: "Send mail via smtp.office365.com STARTTLS XOAUTH2 (parks approval).",
-        access: "write",
-        requires_approval: true,
-    },
-];
-
-const OUTLOOK_CAL_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "list_events",
-        label: "List events",
-        description: "Read Microsoft 365 calendar events via Microsoft Graph.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "schedule_meeting",
-        label: "Schedule meeting",
-        description: "Create an Outlook calendar invite (parks Approve/Deny card).",
-        access: "write",
-        requires_approval: true,
-    },
-];
-
-const ONEDRIVE_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "list_files",
-        label: "List files",
-        description: "List OneDrive/SharePoint items or local synced workspace files.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "publish_file",
-        label: "Publish to SharePoint",
-        description: "Upload a finished deliverable to OneDrive/SharePoint (parks approval).",
-        access: "write",
-        requires_approval: true,
-    },
-];
-
-const TEAMS_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "read_channel",
-        label: "Read channel",
-        description: "Fetch recent Microsoft Teams channel messages.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "post_update",
-        label: "Post Teams update",
-        description: "Send a message to a Microsoft Teams channel (parks approval).",
-        access: "write",
-        requires_approval: true,
-    },
-];
-
-const EXCEL_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "inspect_workbook",
-        label: "Inspect sheets",
-        description: "List and inspect .xlsx/.csv spreadsheets in the local workspace.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "build_sheet",
-        label: "Build spreadsheet",
-        description: "Create a penny-exact CSV or Excel sheet on-device via make_spreadsheet.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "export_xlsx",
-        label: "Export .xlsx workbook",
-        description: "Export workspace tables to multi-sheet Excel with live SUM formulas.",
-        access: "read",
-        requires_approval: false,
-    },
-];
-
-const WORD_PDF_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "read_document",
-        label: "Read Word / PDF",
-        description: "Inspect .docx, .pdf, or .md files in the local workspace.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "draft_document",
-        label: "Draft document",
-        description: "Generate a clean Markdown report locally via write_document.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "export_docx_pdf",
-        label: "Export PDF / Word",
-        description: "Export a Markdown file to native .pdf or .docx locally.",
-        access: "read",
-        requires_approval: false,
-    },
-];
-
-const SLACK_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "read_channel",
-        label: "Read channel",
-        description: "Read recent channel activity via Slack API connector.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "post_message",
-        label: "Post Slack message",
-        description: "Send a message to a Slack channel or webhook (parks approval).",
-        access: "write",
-        requires_approval: true,
-    },
-];
-
-const NOTION_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "search_pages",
-        label: "Search Notion",
-        description: "Search connected Notion databases and pages.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "update_page",
-        label: "Update page",
-        description: "Write an entry or page update in Notion (parks approval).",
-        access: "write",
-        requires_approval: true,
-    },
-];
-
-const GITHUB_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "list_issues",
-        label: "List issues & PRs",
-        description: "Query repository issues and pull requests.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "comment_issue",
-        label: "Comment on PR / Issue",
-        description: "Post a comment or status update on GitHub (parks approval).",
-        access: "write",
-        requires_approval: true,
-    },
-];
-
-const CRM_BILLING_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "list_clients",
-        label: "List clients",
-        description: "Read active clients and retainers from local Company DB.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "sync_invoice",
-        label: "Sync external billing",
-        description: "Push an approved invoice to Stripe / QuickBooks (parks approval).",
-        access: "write",
-        requires_approval: true,
-    },
-];
-
-const LOCAL_FILES_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "list_workspace",
-        label: "List workspace files",
-        description: "Inspect files in the employee's sandboxed on-device workspace.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "search_files",
-        label: "Search workspace",
-        description: "Search across workspace text, CSV, Word, and PDF documents locally.",
-        access: "read",
-        requires_approval: false,
-    },
-    PluginActionSpec {
-        name: "watch_folder_status",
-        label: "Watched folders",
-        description: "List active local watched directories routing files to routines.",
-        access: "read",
-        requires_approval: false,
-    },
-];
-
-const LOCAL_MCP_ACTIONS: &[PluginActionSpec] = &[
-    PluginActionSpec {
-        name: "list_mcp_tools",
-        label: "List MCP tools",
-        description: "List discovered tools from local or HTTP MCP servers.",
-        access: "read",
-        requires_approval: false,
-    },
-];
-
-const CATALOG: &[PluginSpec] = &[
-    // Google Workspace (6)
-    PluginSpec {
-        id: "google-gmail",
-        suite: "google",
-        suite_label: "Google Workspace",
-        name: "Gmail",
-        tagline: "Inbox intake & approval-gated sends",
-        description: "Polls Gmail via IMAPS XOAUTH2 into intake/ and sends outbound mail only after /phone approval.",
-        mode: "cloud",
-        transport: "smtp_imap_xoauth2",
-        local_ready: false,
-        default_enabled: false,
-        actions: GMAIL_ACTIONS,
-        connect_preset: Some(PluginConnectPreset {
-            api_base_url: None,
-            oauth_token_url: Some("https://oauth2.googleapis.com/token"),
-            oauth_scopes: Some("https://mail.google.com/"),
-            smtp_host: Some("smtp.gmail.com"),
-            smtp_port: Some(587),
-            smtp_security: Some("starttls"),
-            imap_host: Some("imap.gmail.com"),
-            imap_port: Some(993),
-            imap_security: Some("imaps"),
-            match_hosts: &["imap.gmail.com", "smtp.gmail.com"],
-            connector_tab: "outbound",
-        }),
-    },
-    PluginSpec {
-        id: "google-calendar",
-        suite: "google",
-        suite_label: "Google Workspace",
-        name: "Google Calendar",
-        tagline: "Schedules, availability & invites",
-        description: "Reads team calendar events and proposes meeting invites with Approve/Deny gating.",
-        mode: "cloud",
-        transport: "oauth2_rest",
-        local_ready: false,
-        default_enabled: false,
-        actions: GCAL_ACTIONS,
-        connect_preset: Some(PluginConnectPreset {
-            api_base_url: Some("https://www.googleapis.com/calendar/v3/calendars/primary/events"),
-            oauth_token_url: Some("https://oauth2.googleapis.com/token"),
-            oauth_scopes: Some("https://www.googleapis.com/auth/calendar"),
-            smtp_host: None,
-            smtp_port: None,
-            smtp_security: None,
-            imap_host: None,
-            imap_port: None,
-            imap_security: None,
-            match_hosts: &["www.googleapis.com"],
-            connector_tab: "outbound",
-        }),
-    },
-    PluginSpec {
-        id: "google-drive",
-        suite: "google",
-        suite_label: "Google Workspace",
-        name: "Google Drive",
-        tagline: "Workspace sync & Drive deliverables",
-        description: "Reads local synced workspace files offline or connects Drive API v3 for cloud uploads.",
-        mode: "hybrid",
-        transport: "oauth2_rest",
-        local_ready: true,
-        default_enabled: false,
-        actions: GDRIVE_ACTIONS,
-        connect_preset: Some(PluginConnectPreset {
-            api_base_url: Some("https://www.googleapis.com/drive/v3/files"),
-            oauth_token_url: Some("https://oauth2.googleapis.com/token"),
-            oauth_scopes: Some("https://www.googleapis.com/auth/drive"),
-            smtp_host: None,
-            smtp_port: None,
-            smtp_security: None,
-            imap_host: None,
-            imap_port: None,
-            imap_security: None,
-            match_hosts: &["www.googleapis.com"],
-            connector_tab: "outbound",
-        }),
-    },
-    PluginSpec {
-        id: "google-docs",
-        suite: "google",
-        suite_label: "Google Workspace",
-        name: "Google Docs",
-        tagline: "Local drafting + cloud Docs sync",
-        description: "Drafts Markdown/Word briefs on-device immediately; optionally syncs to Google Docs with approval.",
-        mode: "hybrid",
-        transport: "oauth2_rest",
-        local_ready: true,
-        default_enabled: false,
-        actions: GDOCS_ACTIONS,
-        connect_preset: Some(PluginConnectPreset {
-            api_base_url: Some("https://docs.googleapis.com/v1/documents"),
-            oauth_token_url: Some("https://oauth2.googleapis.com/token"),
-            oauth_scopes: Some("https://www.googleapis.com/auth/documents"),
-            smtp_host: None,
-            smtp_port: None,
-            smtp_security: None,
-            imap_host: None,
-            imap_port: None,
-            imap_security: None,
-            match_hosts: &["docs.googleapis.com"],
-            connector_tab: "outbound",
-        }),
-    },
-    PluginSpec {
-        id: "google-sheets",
-        suite: "google",
-        suite_label: "Google Workspace",
-        name: "Google Sheets",
-        tagline: "Exact i128 rollups + cloud Sheets sync",
-        description: "Runs penny-exact CSV/table rollups locally and pushes approved ranges to Google Sheets.",
-        mode: "hybrid",
-        transport: "oauth2_rest",
-        local_ready: true,
-        default_enabled: false,
-        actions: GSHEETS_ACTIONS,
-        connect_preset: Some(PluginConnectPreset {
-            api_base_url: Some("https://sheets.googleapis.com/v4/spreadsheets"),
-            oauth_token_url: Some("https://oauth2.googleapis.com/token"),
-            oauth_scopes: Some("https://www.googleapis.com/auth/spreadsheets"),
-            smtp_host: None,
-            smtp_port: None,
-            smtp_security: None,
-            imap_host: None,
-            imap_port: None,
-            imap_security: None,
-            match_hosts: &["sheets.googleapis.com"],
-            connector_tab: "outbound",
-        }),
-    },
-    PluginSpec {
-        id: "google-slides",
-        suite: "google",
-        suite_label: "Google Workspace",
-        name: "Google Slides",
-        tagline: "Deck outlines locally + cloud publish",
-        description: "Builds deck outlines locally and pushes approved slide updates via Google Slides API.",
-        mode: "hybrid",
-        transport: "oauth2_rest",
-        local_ready: true,
-        default_enabled: false,
-        actions: GSLIDES_ACTIONS,
-        connect_preset: Some(PluginConnectPreset {
-            api_base_url: Some("https://slides.googleapis.com/v1/presentations"),
-            oauth_token_url: Some("https://oauth2.googleapis.com/token"),
-            oauth_scopes: Some("https://www.googleapis.com/auth/presentations"),
-            smtp_host: None,
-            smtp_port: None,
-            smtp_security: None,
-            imap_host: None,
-            imap_port: None,
-            imap_security: None,
-            match_hosts: &["slides.googleapis.com"],
-            connector_tab: "outbound",
-        }),
-    },
-
-    // Microsoft 365 & Outlook (6)
-    PluginSpec {
-        id: "outlook-mail",
-        suite: "microsoft",
-        suite_label: "Microsoft 365 & Outlook",
-        name: "Outlook Mail",
-        tagline: "Exchange / M365 IMAPS + SMTP XOAUTH2",
-        description: "Connects company Outlook/Exchange shared or personal inboxes with XOAUTH2 intake and gated sends.",
-        mode: "cloud",
-        transport: "smtp_imap_xoauth2",
-        local_ready: false,
-        default_enabled: false,
-        actions: OUTLOOK_MAIL_ACTIONS,
-        connect_preset: Some(PluginConnectPreset {
-            api_base_url: None,
-            oauth_token_url: Some("https://login.microsoftonline.com/common/oauth2/v2.0/token"),
-            oauth_scopes: Some("https://outlook.office365.com/SMTP.Send https://outlook.office365.com/IMAP.AccessAsUser.All offline_access"),
-            smtp_host: Some("smtp.office365.com"),
-            smtp_port: Some(587),
-            smtp_security: Some("starttls"),
-            imap_host: Some("outlook.office365.com"),
-            imap_port: Some(993),
-            imap_security: Some("imaps"),
-            match_hosts: &["outlook.office365.com", "smtp.office365.com"],
-            connector_tab: "outbound",
-        }),
-    },
-    PluginSpec {
-        id: "outlook-calendar",
-        suite: "microsoft",
-        suite_label: "Microsoft 365 & Outlook",
-        name: "Outlook Calendar",
-        tagline: "Microsoft Graph events & scheduling",
-        description: "Reads Outlook Calendar availability and stages meeting invites for /phone approval.",
-        mode: "cloud",
-        transport: "oauth2_rest",
-        local_ready: false,
-        default_enabled: false,
-        actions: OUTLOOK_CAL_ACTIONS,
-        connect_preset: Some(PluginConnectPreset {
-            api_base_url: Some("https://graph.microsoft.com/v1.0/me/events"),
-            oauth_token_url: Some("https://login.microsoftonline.com/common/oauth2/v2.0/token"),
-            oauth_scopes: Some("https://graph.microsoft.com/Calendars.ReadWrite offline_access"),
-            smtp_host: None,
-            smtp_port: None,
-            smtp_security: None,
-            imap_host: None,
-            imap_port: None,
-            imap_security: None,
-            match_hosts: &["graph.microsoft.com"],
-            connector_tab: "outbound",
-        }),
-    },
-    PluginSpec {
-        id: "onedrive-sharepoint",
-        suite: "microsoft",
-        suite_label: "Microsoft 365 & Outlook",
-        name: "OneDrive & SharePoint",
-        tagline: "Local files offline + M365 Graph sync",
-        description: "Lists synced workspace files offline and uploads deliverables to SharePoint/OneDrive with approval.",
-        mode: "hybrid",
-        transport: "oauth2_rest",
-        local_ready: true,
-        default_enabled: false,
-        actions: ONEDRIVE_ACTIONS,
-        connect_preset: Some(PluginConnectPreset {
-            api_base_url: Some("https://graph.microsoft.com/v1.0/me/drive/root/children"),
-            oauth_token_url: Some("https://login.microsoftonline.com/common/oauth2/v2.0/token"),
-            oauth_scopes: Some("https://graph.microsoft.com/Files.ReadWrite.All offline_access"),
-            smtp_host: None,
-            smtp_port: None,
-            smtp_security: None,
-            imap_host: None,
-            imap_port: None,
-            imap_security: None,
-            match_hosts: &["graph.microsoft.com"],
-            connector_tab: "outbound",
-        }),
-    },
-    PluginSpec {
-        id: "microsoft-teams",
-        suite: "microsoft",
-        suite_label: "Microsoft 365 & Outlook",
-        name: "Microsoft Teams",
-        tagline: "Channel updates & status posts",
-        description: "Reads Teams channel context and routes outbound status updates through Approve/Deny.",
-        mode: "cloud",
-        transport: "oauth2_rest",
-        local_ready: false,
-        default_enabled: false,
-        actions: TEAMS_ACTIONS,
-        connect_preset: Some(PluginConnectPreset {
-            api_base_url: Some("https://graph.microsoft.com/v1.0/me/joinedTeams"),
-            oauth_token_url: Some("https://login.microsoftonline.com/common/oauth2/v2.0/token"),
-            oauth_scopes: Some("https://graph.microsoft.com/ChannelMessage.Send offline_access"),
-            smtp_host: None,
-            smtp_port: None,
-            smtp_security: None,
-            imap_host: None,
-            imap_port: None,
-            imap_security: None,
-            match_hosts: &["graph.microsoft.com"],
-            connector_tab: "outbound",
-        }),
-    },
-    PluginSpec {
-        id: "office-excel",
-        suite: "microsoft",
-        suite_label: "Microsoft 365 & Outlook",
-        name: "Excel & Spreadsheets",
-        tagline: "On-device .xlsx/.csv + live SUM formulas",
-        description: "Enabled out of the box locally: reads .xlsx/.csv, deduplicates BOMs with i128 math, and exports workbooks.",
-        mode: "hybrid",
-        transport: "local_builtin",
-        local_ready: true,
-        default_enabled: true,
-        actions: EXCEL_ACTIONS,
-        connect_preset: Some(PluginConnectPreset {
-            api_base_url: Some("https://graph.microsoft.com/v1.0/me/drive/root:/workbooks"),
-            oauth_token_url: Some("https://login.microsoftonline.com/common/oauth2/v2.0/token"),
-            oauth_scopes: Some("https://graph.microsoft.com/Files.ReadWrite offline_access"),
-            smtp_host: None,
-            smtp_port: None,
-            smtp_security: None,
-            imap_host: None,
-            imap_port: None,
-            imap_security: None,
-            match_hosts: &["graph.microsoft.com"],
-            connector_tab: "outbound",
-        }),
-    },
-    PluginSpec {
-        id: "office-word-pdf",
-        suite: "microsoft",
-        suite_label: "Microsoft 365 & Outlook",
-        name: "Word & PDF Suite",
-        tagline: "On-device .docx/.pdf reading & export",
-        description: "Enabled out of the box locally: reads Word, PowerPoint, and PDFs and exports signed reports on-device.",
-        mode: "hybrid",
-        transport: "local_builtin",
-        local_ready: true,
-        default_enabled: true,
-        actions: WORD_PDF_ACTIONS,
-        connect_preset: None,
-    },
-
-    // Business Apps (4)
-    PluginSpec {
-        id: "slack",
-        suite: "business",
-        suite_label: "Business Apps",
-        name: "Slack",
-        tagline: "Team notifications & channel posts",
-        description: "Reads channels or posts approved run summaries into Slack via OAuth2 REST or webhook.",
-        mode: "cloud",
-        transport: "oauth2_rest",
-        local_ready: false,
-        default_enabled: false,
-        actions: SLACK_ACTIONS,
-        connect_preset: Some(PluginConnectPreset {
-            api_base_url: Some("https://slack.com/api/chat.postMessage"),
-            oauth_token_url: Some("https://slack.com/api/oauth.v2.access"),
-            oauth_scopes: Some("chat:write channels:read"),
-            smtp_host: None,
-            smtp_port: None,
-            smtp_security: None,
-            imap_host: None,
-            imap_port: None,
-            imap_security: None,
-            match_hosts: &["slack.com", "hooks.slack.com"],
-            connector_tab: "outbound",
-        }),
-    },
-    PluginSpec {
-        id: "notion",
-        suite: "business",
-        suite_label: "Business Apps",
-        name: "Notion",
-        tagline: "Wiki search & gated database updates",
-        description: "Queries Notion pages and routes database writes through human approval.",
-        mode: "cloud",
-        transport: "oauth2_rest",
-        local_ready: false,
-        default_enabled: false,
-        actions: NOTION_ACTIONS,
-        connect_preset: Some(PluginConnectPreset {
-            api_base_url: Some("https://api.notion.com/v1/search"),
-            oauth_token_url: Some("https://api.notion.com/v1/oauth/token"),
-            oauth_scopes: Some("read_content insert_content update_content"),
-            smtp_host: None,
-            smtp_port: None,
-            smtp_security: None,
-            imap_host: None,
-            imap_port: None,
-            imap_security: None,
-            match_hosts: &["api.notion.com"],
-            connector_tab: "outbound",
-        }),
-    },
-    PluginSpec {
-        id: "github",
-        suite: "business",
-        suite_label: "Business Apps",
-        name: "GitHub",
-        tagline: "Issues, PR summaries & gated comments",
-        description: "Reads issues/PRs and parks any external comment or status post on /phone.",
-        mode: "hybrid",
-        transport: "oauth2_rest",
-        local_ready: true,
-        default_enabled: false,
-        actions: GITHUB_ACTIONS,
-        connect_preset: Some(PluginConnectPreset {
-            api_base_url: Some("https://api.github.com"),
-            oauth_token_url: Some("https://github.com/login/oauth/access_token"),
-            oauth_scopes: Some("repo read:org"),
-            smtp_host: None,
-            smtp_port: None,
-            smtp_security: None,
-            imap_host: None,
-            imap_port: None,
-            imap_security: None,
-            match_hosts: &["api.github.com"],
-            connector_tab: "outbound",
-        }),
-    },
-    PluginSpec {
-        id: "crm-billing",
-        suite: "business",
-        suite_label: "Business Apps",
-        name: "CRM & Billing",
-        tagline: "Client vaults, retainers & QuickBooks/Stripe sync",
-        description: "Enabled out of the box locally for client vaults & retainers; supports approval-gated cloud invoice sync.",
-        mode: "hybrid",
-        transport: "local_builtin",
-        local_ready: true,
-        default_enabled: true,
-        actions: CRM_BILLING_ACTIONS,
-        connect_preset: None,
-    },
-
-    // On-Device Local (2)
-    PluginSpec {
-        id: "local-workspace-files",
-        suite: "local",
-        suite_label: "On-Device Local",
-        name: "On-Device Files & Watched Folders",
-        tagline: "100% offline sandboxed workspace & folder triggers",
-        description: "Active by default on-device: reads, searches, and watches local folders inside Tripwire path confinement.",
-        mode: "local",
-        transport: "local_builtin",
-        local_ready: true,
-        default_enabled: true,
-        actions: LOCAL_FILES_ACTIONS,
-        connect_preset: None,
-    },
-    PluginSpec {
-        id: "local-mcp-bridge",
-        suite: "local",
-        suite_label: "On-Device Local",
-        name: "Local Apps & MCP Bridge",
-        tagline: "Connect any desktop CLI, database, or MCP server",
-        description: "Active by default on-device: discovers stdio and HTTP MCP tools with optional /phone approval gates.",
-        mode: "local",
-        transport: "mcp",
-        local_ready: true,
-        default_enabled: true,
-        actions: LOCAL_MCP_ACTIONS,
-        connect_preset: Some(PluginConnectPreset {
-            api_base_url: None,
-            oauth_token_url: None,
-            oauth_scopes: None,
-            smtp_host: None,
-            smtp_port: None,
-            smtp_security: None,
-            imap_host: None,
-            imap_port: None,
-            imap_security: None,
-            match_hosts: &[],
-            connector_tab: "mcp",
-        }),
-    },
-];
-
-pub fn default_catalog() -> &'static [PluginSpec] {
-    CATALOG
+pub fn catalog_for_person(person_data_dir: &Path) -> Vec<DynamicPluginSpec> {
+    let root = records::infer_root_data_dir(person_data_dir);
+    let mut list = plugin_registry::merged_catalog(&root);
+    let mut seen: HashSet<String> = list.iter().map(|p| p.id.clone()).collect();
+    let store = with_plugins_lock(|| {
+        let path = plugins_path(person_data_dir);
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            return BTreeMap::new();
+        };
+        let Ok(val) = serde_json::from_str::<Value>(&raw) else {
+            return BTreeMap::new();
+        };
+        let mut map = BTreeMap::new();
+        if let Some(obj) = val["installed"].as_object() {
+            for (k, v) in obj {
+                if let Some(rec) = InstalledPluginRecord::from_json(k, v) {
+                    map.insert(k.clone(), rec);
+                }
+            }
+        }
+        map
+    });
+    for rec in store.into_values() {
+        if seen.insert(rec.spec.id.clone()) {
+            list.push(rec.spec);
+        }
+    }
+    list
 }
 
-pub fn find_plugin(id: &str) -> Option<&'static PluginSpec> {
+pub fn find_plugin_for_person(person_data_dir: &Path, id: &str) -> Option<DynamicPluginSpec> {
     let key = id.trim();
-    CATALOG.iter().find(|p| p.id == key)
+    catalog_for_person(person_data_dir)
+        .into_iter()
+        .find(|p| p.id == key)
+}
+
+pub fn find_plugin(id: &str) -> Option<DynamicPluginSpec> {
+    let base = plugin_registry::embedded_baseline();
+    plugin_registry::find_in_catalog(&base, id)
 }
 
 #[derive(Clone, Debug)]
@@ -957,9 +203,11 @@ struct CloudMatch {
     connector_name: Option<String>,
     trigger_id: Option<String>,
     trigger_name: Option<String>,
+    mcp_server_id: Option<String>,
+    mcp_server_name: Option<String>,
 }
 
-fn host_matches(candidate: &str, patterns: &[&str]) -> bool {
+fn host_matches(candidate: &str, patterns: &[String]) -> bool {
     let low = candidate.trim().to_ascii_lowercase();
     if low.is_empty() {
         return false;
@@ -971,23 +219,27 @@ fn host_matches(candidate: &str, patterns: &[&str]) -> bool {
 }
 
 fn detect_cloud_match(
-    spec: &PluginSpec,
+    spec: &DynamicPluginSpec,
     connectors_snapshot: &Value,
-    mcp_servers_len: usize,
+    mcp_snapshot: &Value,
+    installed_rec: Option<&InstalledPluginRecord>,
 ) -> Option<CloudMatch> {
+    let mcp_servers = mcp_snapshot["servers"].as_array();
+    let mcp_len = mcp_servers
+        .map(|a| a.iter().filter(|s| s["enabled"].as_bool() == Some(true)).count())
+        .unwrap_or(0);
+
     if spec.id == "local-mcp-bridge" {
-        if mcp_servers_len > 0 {
+        if mcp_len > 0 {
             return Some(CloudMatch {
                 connector_id: None,
-                connector_name: Some(format!("{mcp_servers_len} MCP server(s)")),
+                connector_name: Some(format!("{mcp_len} MCP server(s)")),
                 trigger_id: None,
                 trigger_name: None,
+                mcp_server_id: None,
+                mcp_server_name: None,
             });
         }
-        return None;
-    }
-    let preset = spec.connect_preset.as_ref()?;
-    if preset.match_hosts.is_empty() {
         return None;
     }
 
@@ -996,42 +248,64 @@ fn detect_cloud_match(
         connector_name: None,
         trigger_id: None,
         trigger_name: None,
+        mcp_server_id: None,
+        mcp_server_name: None,
     };
 
-    if let Some(outbound) = connectors_snapshot["outbound"].as_array() {
-        for c in outbound {
-            if c["enabled"].as_bool() != Some(true) {
-                continue;
-            }
-            let url = c["url"].as_str().unwrap_or("");
-            let uhost = parse_url_host_port(url).map(|(h, _)| h).unwrap_or_default();
-            let smtp_host = c["smtp_config"]["host"].as_str().unwrap_or("");
-            if host_matches(&uhost, preset.match_hosts) || host_matches(smtp_host, preset.match_hosts)
+    if let Some(rec) = installed_rec {
+        if let Some(servers) = mcp_servers {
+            if let Some(srv) = servers
+                .iter()
+                .find(|s| s["id"].as_str() == Some(rec.mcp_server_id.as_str()) && s["enabled"].as_bool() == Some(true))
             {
-                matched.connector_id = c["id"].as_str().map(str::to_string);
-                matched.connector_name = c["name"].as_str().map(str::to_string);
-                break;
+                matched.mcp_server_id = srv["id"].as_str().map(str::to_string);
+                matched.mcp_server_name = srv["name"].as_str().map(str::to_string);
             }
         }
     }
 
-    if let Some(triggers) = connectors_snapshot["triggers"].as_array() {
-        for t in triggers {
-            if t["enabled"].as_bool() != Some(true) {
-                continue;
+    if let Some(preset) = spec.connect_preset.as_ref() {
+        if !preset.match_hosts.is_empty() {
+            if let Some(outbound) = connectors_snapshot["outbound"].as_array() {
+                for c in outbound {
+                    if c["enabled"].as_bool() != Some(true) {
+                        continue;
+                    }
+                    let url = c["url"].as_str().unwrap_or("");
+                    let uhost = parse_url_host_port(url).map(|(h, _)| h).unwrap_or_default();
+                    let smtp_host = c["smtp_config"]["host"].as_str().unwrap_or("");
+                    if host_matches(&uhost, &preset.match_hosts)
+                        || host_matches(smtp_host, &preset.match_hosts)
+                    {
+                        matched.connector_id = c["id"].as_str().map(str::to_string);
+                        matched.connector_name = c["name"].as_str().map(str::to_string);
+                        break;
+                    }
+                }
             }
-            if t["kind"].as_str() == Some("imap_poll") {
-                let imap_host = t["imap_config"]["host"].as_str().unwrap_or("");
-                if host_matches(imap_host, preset.match_hosts) {
-                    matched.trigger_id = t["id"].as_str().map(str::to_string);
-                    matched.trigger_name = t["name"].as_str().map(str::to_string);
-                    break;
+
+            if let Some(triggers) = connectors_snapshot["triggers"].as_array() {
+                for t in triggers {
+                    if t["enabled"].as_bool() != Some(true) {
+                        continue;
+                    }
+                    if t["kind"].as_str() == Some("imap_poll") {
+                        let imap_host = t["imap_config"]["host"].as_str().unwrap_or("");
+                        if host_matches(imap_host, &preset.match_hosts) {
+                            matched.trigger_id = t["id"].as_str().map(str::to_string);
+                            matched.trigger_name = t["name"].as_str().map(str::to_string);
+                            break;
+                        }
+                    }
                 }
             }
         }
     }
 
-    if matched.connector_id.is_some() || matched.trigger_id.is_some() {
+    if matched.connector_id.is_some()
+        || matched.trigger_id.is_some()
+        || matched.mcp_server_id.is_some()
+    {
         Some(matched)
     } else {
         None
@@ -1039,13 +313,15 @@ fn detect_cloud_match(
 }
 
 fn resolve_plugin_json(
-    spec: &PluginSpec,
+    spec: &DynamicPluginSpec,
     setting: &PluginPersonSetting,
     cloud_match: Option<&CloudMatch>,
     oauth_provider: Option<&'static str>,
     oauth_label: Option<&str>,
+    installed_rec: Option<&InstalledPluginRecord>,
 ) -> Value {
     let oauth_connected = oauth_label.is_some();
+    let installed = installed_rec.is_some();
     let cloud_connected = cloud_match.is_some() || oauth_connected;
     let effective_mode = match setting.preferred_mode.as_str() {
         "local" if spec.local_ready => "local",
@@ -1075,19 +351,25 @@ fn resolve_plugin_json(
         "enabled_needs_auth"
     };
 
-    let connector_via = cloud_match.and_then(|m| {
+    let mut via_parts: Vec<String> = Vec::new();
+    if let Some(o) = oauth_label {
+        via_parts.push(o.to_string());
+    }
+    if let Some(m) = cloud_match {
         match (m.connector_name.as_deref(), m.trigger_name.as_deref()) {
-            (Some(c), Some(t)) => Some(format!("{c} + {t}")),
-            (Some(c), None) => Some(c.to_string()),
-            (None, Some(t)) => Some(t.to_string()),
-            (None, None) => None,
+            (Some(c), Some(t)) => via_parts.push(format!("{c} + {t}")),
+            (Some(c), None) => via_parts.push(c.to_string()),
+            (None, Some(t)) => via_parts.push(t.to_string()),
+            (None, None) => {}
         }
-    });
-    let connected_via = match (oauth_label, connector_via) {
-        (Some(o), Some(c)) => Some(format!("{o} · {c}")),
-        (Some(o), None) => Some(o.to_string()),
-        (None, Some(c)) => Some(c),
-        (None, None) => None,
+        if let Some(ref mn) = m.mcp_server_name {
+            via_parts.push(format!("Installed ({mn})"));
+        }
+    }
+    let connected_via = if via_parts.is_empty() {
+        None
+    } else {
+        Some(via_parts.join(" · "))
     };
 
     json!({
@@ -1101,6 +383,9 @@ fn resolve_plugin_json(
         "transport": spec.transport,
         "local_ready": spec.local_ready,
         "default_enabled": spec.default_enabled,
+        "version": spec.version,
+        "source": spec.source,
+        "installed": installed,
         "enabled": setting.enabled || cloud_connected,
         "preferred_mode": setting.preferred_mode,
         "effective_mode": effective_mode,
@@ -1111,8 +396,12 @@ fn resolve_plugin_json(
         "connected_via": connected_via,
         "linked_connector_id": cloud_match.and_then(|m| m.connector_id.clone()),
         "linked_trigger_id": cloud_match.and_then(|m| m.trigger_id.clone()),
+        "linked_mcp_server_id": installed_rec.map(|r| r.mcp_server_id.clone()),
         "actions": spec.actions.iter().map(|a| a.to_json()).collect::<Vec<_>>(),
-        "connect_preset": spec.connect_preset.as_ref().map(|p| p.to_json()),
+        "connect_preset": spec.connect_preset.as_ref().map(|p| p.to_public_json()),
+        "install_spec": spec.install_spec.as_ref().map(|i| i.to_json()),
+        "website_url": spec.website_url,
+        "repository_url": spec.repository_url,
     })
 }
 
@@ -1120,34 +409,38 @@ pub fn list_plugins_json(person_data_dir: &Path) -> Value {
     let policy = crate::load_workspace_policy(person_data_dir);
     let connectors_snap = connectors::list_connectors_json(person_data_dir, &policy);
     let mcp_snap = mcp::list_mcp_servers_json(person_data_dir, &policy);
-    let mcp_len = mcp_snap["servers"]
-        .as_array()
-        .map(|a| a.iter().filter(|s| s["enabled"].as_bool() == Some(true)).count())
-        .unwrap_or(0);
+    let google_label = plugin_cloud::connected_account_label(person_data_dir, "google");
+    let ms_label = plugin_cloud::connected_account_label(person_data_dir, "microsoft");
 
-    let google_label = crate::plugin_cloud::connected_account_label(person_data_dir, "google");
-    let ms_label = crate::plugin_cloud::connected_account_label(person_data_dir, "microsoft");
-
+    let catalog = catalog_for_person(person_data_dir);
     let store = with_plugins_lock(|| PluginsStore::load_unlocked(person_data_dir));
-    let mut plugins = Vec::with_capacity(CATALOG.len());
+    let mut plugins = Vec::with_capacity(catalog.len());
     let mut enabled_count = 0usize;
     let mut local_active = 0usize;
     let mut cloud_connected = 0usize;
 
-    for spec in CATALOG {
-        let setting = store.settings.get(spec.id).cloned().unwrap_or(PluginPersonSetting {
+    for spec in &catalog {
+        let setting = store.settings.get(&spec.id).cloned().unwrap_or(PluginPersonSetting {
             enabled: spec.default_enabled,
             preferred_mode: "auto".to_string(),
             updated_ms: 0,
         });
-        let cm = detect_cloud_match(spec, &connectors_snap, mcp_len);
-        let oauth_prov = crate::plugin_cloud::provider_for_plugin(spec.id);
+        let installed_rec = store.installed.get(&spec.id);
+        let cm = detect_cloud_match(spec, &connectors_snap, &mcp_snap, installed_rec);
+        let oauth_prov = plugin_cloud::provider_for_plugin(&spec.id);
         let oauth_lbl = match oauth_prov {
             Some("google") => google_label.as_deref(),
             Some("microsoft") => ms_label.as_deref(),
             _ => None,
         };
-        let entry = resolve_plugin_json(spec, &setting, cm.as_ref(), oauth_prov, oauth_lbl);
+        let entry = resolve_plugin_json(
+            spec,
+            &setting,
+            cm.as_ref(),
+            oauth_prov,
+            oauth_lbl,
+            installed_rec,
+        );
         if entry["enabled"].as_bool() == Some(true) {
             enabled_count += 1;
         }
@@ -1161,14 +454,16 @@ pub fn list_plugins_json(person_data_dir: &Path) -> Value {
         plugins.push(entry);
     }
 
+    let root = records::infer_root_data_dir(person_data_dir);
     json!({
         "plugins": plugins,
         "summary": {
-            "total": CATALOG.len(),
+            "total": catalog.len(),
             "enabled_count": enabled_count,
             "local_active": local_active,
             "cloud_connected": cloud_connected,
-        }
+        },
+        "registry": plugin_registry::registry_status_json(&root),
     })
 }
 
@@ -1178,7 +473,7 @@ pub fn toggle_plugin(
     enabled: Option<bool>,
     preferred_mode: Option<&str>,
 ) -> Result<Value, String> {
-    let spec = find_plugin(plugin_id)
+    let spec = find_plugin_for_person(person_data_dir, plugin_id)
         .ok_or_else(|| format!("unknown plugin id: {plugin_id}"))?;
     if let Some(m) = preferred_mode {
         if !matches!(m, "auto" | "local" | "cloud") {
@@ -1190,7 +485,7 @@ pub fn toggle_plugin(
         let mut store = PluginsStore::load_unlocked(person_data_dir);
         let cur = store
             .settings
-            .get(spec.id)
+            .get(&spec.id)
             .cloned()
             .unwrap_or(PluginPersonSetting {
                 enabled: spec.default_enabled,
@@ -1204,7 +499,7 @@ pub fn toggle_plugin(
                 .unwrap_or(cur.preferred_mode),
             updated_ms: records::now_millis(),
         };
-        store.settings.insert(spec.id.to_string(), next);
+        store.settings.insert(spec.id.clone(), next);
         store.save_unlocked(person_data_dir)?;
         Ok::<(), String>(())
     })?;
@@ -1212,8 +507,106 @@ pub fn toggle_plugin(
     let full = list_plugins_json(person_data_dir);
     full["plugins"]
         .as_array()
-        .and_then(|arr| arr.iter().find(|p| p["id"].as_str() == Some(spec.id)).cloned())
+        .and_then(|arr| arr.iter().find(|p| p["id"].as_str() == Some(spec.id.as_str())).cloned())
         .ok_or_else(|| "plugin saved but could not reload".to_string())
+}
+
+pub fn install_registry_plugin(
+    root_data_dir: &Path,
+    person_data_dir: &Path,
+    body: &Value,
+) -> Result<Value, (u16, String)> {
+    let plugin_id = body["plugin_id"].as_str().unwrap_or("").trim().to_string();
+    let spec = if !plugin_id.is_empty() {
+        find_plugin_for_person(person_data_dir, &plugin_id).or_else(|| {
+            if body["spec"].is_object() {
+                DynamicPluginSpec::from_json(&body["spec"], "community_registry")
+            } else {
+                None
+            }
+        })
+    } else if body["spec"].is_object() {
+        DynamicPluginSpec::from_json(&body["spec"], "community_registry")
+    } else {
+        None
+    }
+    .ok_or_else(|| (400, "valid plugin_id or spec is required".to_string()))?;
+
+    let credentials = if body["credentials"].is_object() {
+        &body["credentials"]
+    } else {
+        body
+    };
+    let (mcp_server_id, _server_json) =
+        plugin_registry::build_mcp_server_from_plugin(person_data_dir, &spec, credentials)?;
+
+    let now = records::now_millis();
+    with_plugins_lock(|| {
+        let mut store = PluginsStore::load_unlocked(person_data_dir);
+        store.installed.insert(
+            spec.id.clone(),
+            InstalledPluginRecord {
+                plugin_id: spec.id.clone(),
+                mcp_server_id: mcp_server_id.clone(),
+                installed_ms: now,
+                spec: spec.clone(),
+            },
+        );
+        store.settings.insert(
+            spec.id.clone(),
+            PluginPersonSetting {
+                enabled: true,
+                preferred_mode: "auto".to_string(),
+                updated_ms: now,
+            },
+        );
+        store.save_unlocked(person_data_dir)
+    })
+    .map_err(|e| (500, e))?;
+
+    let _ = root_data_dir;
+    let full = list_plugins_json(person_data_dir);
+    let plugin = full["plugins"]
+        .as_array()
+        .and_then(|arr| arr.iter().find(|p| p["id"].as_str() == Some(spec.id.as_str())).cloned())
+        .unwrap_or_else(|| spec.to_storage_json());
+    Ok(json!({
+        "ok": true,
+        "plugin": plugin,
+        "mcp_server_id": mcp_server_id,
+    }))
+}
+
+pub fn uninstall_registry_plugin(
+    person_data_dir: &Path,
+    plugin_id: &str,
+) -> Result<Value, (u16, String)> {
+    let key = plugin_id.trim();
+    if key.is_empty() {
+        return Err((400, "plugin_id is required".to_string()));
+    }
+    let removed_mcp_id = with_plugins_lock(|| {
+        let mut store = PluginsStore::load_unlocked(person_data_dir);
+        let rec = store.installed.remove(key);
+        if let Some(s) = store.settings.get_mut(key) {
+            s.enabled = false;
+            s.updated_ms = records::now_millis();
+        }
+        store
+            .save_unlocked(person_data_dir)
+            .map_err(|e| (500, e))?;
+        Ok::<Option<String>, (u16, String)>(rec.map(|r| r.mcp_server_id))
+    })?;
+
+    if let Some(mid) = removed_mcp_id {
+        let _ = mcp::delete_mcp_server(person_data_dir, &mid);
+    }
+
+    Ok(json!({
+        "ok": true,
+        "plugin_id": key,
+        "plugins": list_plugins_json(person_data_dir)["plugins"].clone(),
+    }))
 }
 
 /// Compact summary injected into the employee agent system prompt so the agent
@@ -1238,7 +631,7 @@ pub fn prompt_summary(person_data_dir: &Path) -> String {
 
 /// Map a tool invocation to `(plugin_id, plugin_name, execution_mode)` for
 /// unobtrusive realtime SSE activity tracking in the frontend.
-pub fn describe_tool_activity(tool: &str, args: &Value) -> Option<(&'static str, &'static str, &'static str)> {
+pub fn describe_tool_activity(tool: &str, args: &Value) -> Option<(String, String, &'static str)> {
     match tool {
         "run_plugin_action" => {
             let pid = args["plugin_id"].as_str().unwrap_or("");
@@ -1252,25 +645,41 @@ pub fn describe_tool_activity(tool: &str, args: &Value) -> Option<(&'static str,
                 (spec.id, spec.name, mode)
             })
         }
-        "make_spreadsheet" | "reconcile_ledger" | "query_table" | "aggregate_vault" => {
-            Some(("office-excel", "Excel & Spreadsheets", "local"))
-        }
+        "make_spreadsheet" | "reconcile_ledger" | "query_table" | "aggregate_vault" => Some((
+            "office-excel".to_string(),
+            "Excel & Spreadsheets".to_string(),
+            "local",
+        )),
         "write_document" | "export_file" | "summarize_meeting" | "audit_contract" | "draft_brief" => {
-            Some(("office-word-pdf", "Word & PDF Suite", "local"))
+            Some((
+                "office-word-pdf".to_string(),
+                "Word & PDF Suite".to_string(),
+                "local",
+            ))
         }
         "read_file" | "write_file" | "patch_file" | "list_dir" | "search_files" | "search_vault"
-        | "move_file" => Some(("local-workspace-files", "On-Device Files", "local")),
-        "query_company_db" => Some(("crm-billing", "CRM & Billing", "local")),
-        "invoke_connector" => Some(("connectors", "Cloud Connector", "cloud")),
-        other if other.starts_with("mcp.") => {
-            Some(("local-mcp-bridge", "Local Apps & MCP", "local"))
-        }
+        | "move_file" => Some((
+            "local-workspace-files".to_string(),
+            "On-Device Files".to_string(),
+            "local",
+        )),
+        "query_company_db" => Some((
+            "crm-billing".to_string(),
+            "CRM & Billing".to_string(),
+            "local",
+        )),
+        "invoke_connector" => Some(("connectors".to_string(), "Cloud Connector".to_string(), "cloud")),
+        other if other.starts_with("mcp.") => Some((
+            "local-mcp-bridge".to_string(),
+            "Local Apps & MCP".to_string(),
+            "local",
+        )),
         _ => None,
     }
 }
 
-/// Execute a plugin action via local on-device tooling, cloud connector, or
-/// park an Approve/Deny decision for consequential external writes.
+/// Execute a plugin action via local on-device tooling, native OAuth REST,
+/// connected MCP server, or park an Approve/Deny decision for writes.
 pub fn execute_plugin_action(
     cfg: &Config,
     plugin_id: &str,
@@ -1279,7 +688,7 @@ pub fn execute_plugin_action(
     args: &Value,
     thread_id: &str,
 ) -> Result<(String, &'static str), String> {
-    let spec = find_plugin(plugin_id)
+    let spec = find_plugin_for_person(&cfg.data_dir, plugin_id)
         .ok_or_else(|| format!("unknown plugin: {plugin_id}"))?;
     let act_spec = spec
         .actions
@@ -1290,7 +699,7 @@ pub fn execute_plugin_action(
     let all = list_plugins_json(&cfg.data_dir);
     let current = all["plugins"]
         .as_array()
-        .and_then(|arr| arr.iter().find(|p| p["id"].as_str() == Some(spec.id)))
+        .and_then(|arr| arr.iter().find(|p| p["id"].as_str() == Some(spec.id.as_str())))
         .cloned()
         .unwrap_or_else(|| json!({}));
     let cloud_connected = current["cloud_connected"].as_bool() == Some(true);
@@ -1298,7 +707,7 @@ pub fn execute_plugin_action(
     let preferred = current["preferred_mode"].as_str().unwrap_or("auto");
 
     let is_local_only_action = matches!(
-        act_spec.name,
+        act_spec.name.as_str(),
         "draft_reply"
             | "build_sheet"
             | "export_xlsx"
@@ -1318,7 +727,7 @@ pub fn execute_plugin_action(
         "local" => {
             if !spec.local_ready && act_spec.name != "draft_reply" {
                 return Err(format!(
-                    "{} does not have an offline local mode; Sign in with OAuth2 or configure Connectors first.",
+                    "{} does not have an offline local mode; Sign in with OAuth2 or install it in Plugins first.",
                     spec.name
                 ));
             }
@@ -1364,6 +773,7 @@ pub fn execute_plugin_action(
                 "action_label": act_spec.label,
                 "mode": resolved_mode,
                 "linked_connector_id": current["linked_connector_id"].clone(),
+                "linked_mcp_server_id": current["linked_mcp_server_id"].clone(),
                 "args": args.clone(),
             }),
         );
@@ -1376,9 +786,9 @@ pub fn execute_plugin_action(
         ));
     }
 
-    // Read / non-consequential actions: run locally on-device or route via native OAuth REST / configured connector.
+    // Read / non-consequential actions: native OAuth REST, connected MCP, or connector.
     if resolved_mode == "cloud" {
-        if let Some(out) = crate::plugin_cloud::execute_native_cloud_action(cfg, spec.id, act_spec.name, args)? {
+        if let Some(out) = plugin_cloud::execute_native_cloud_action(cfg, &spec.id, &act_spec.name, args)? {
             return Ok((out, "cloud"));
         }
         if let Some(trig_id) = current["linked_trigger_id"].as_str() {
@@ -1418,14 +828,29 @@ pub fn execute_plugin_action(
                 }
             }
         }
+        if let Some(mcp_id) = current["linked_mcp_server_id"].as_str() {
+            let prefix = format!("mcp.{mcp_id}.");
+            let tools = mcp::load_enabled_mcp_tools(&cfg.data_dir);
+            let matching: Vec<String> = tools
+                .into_iter()
+                .filter(|(full_name, _, _)| full_name.starts_with(&prefix))
+                .map(|(full_name, _, _)| full_name)
+                .collect();
+            let detail = if matching.is_empty() {
+                format!("{} is installed cleanly (server={mcp_id}). Ask your agent in Chat or run Discover tools in Connectors -> MCP Tools.", spec.name)
+            } else {
+                format!("{} is connected (server={mcp_id}) with {} discovered tool(s): {}.", spec.name, matching.len(), matching.join(", "))
+            };
+            return Ok((detail, "cloud"));
+        }
         return Err(format!(
-            "{} is not connected to a live cloud account yet. Open Plugins -> Sign in with OAuth2 or configure a Connector.",
+            "{} is not connected yet. Open Plugins -> Connect / Sign in with OAuth2 to configure credentials.",
             spec.name
         ));
     }
 
     // Local on-device execution
-    let out = match (spec.id, act_spec.name) {
+    let out = match (spec.id.as_str(), act_spec.name.as_str()) {
         ("local-workspace-files", "list_workspace")
         | ("google-drive", "list_files")
         | ("onedrive-sharepoint", "list_files")
@@ -1484,7 +909,7 @@ pub fn execute_plugin_action(
         | ("outlook-mail", "draft_reply") => {
             let title = args["title"]
                 .as_str()
-                .unwrap_or(match spec.id {
+                .unwrap_or(match spec.id.as_str() {
                     "google-slides" => "Deck Outline",
                     "google-gmail" | "outlook-mail" => "Email Reply Draft",
                     _ => "Workspace Draft",
@@ -1520,14 +945,14 @@ pub fn execute_plugin_action(
         ("local-mcp-bridge", "list_mcp_tools") => {
             let tools = mcp::load_enabled_mcp_tools(&cfg.data_dir);
             if tools.is_empty() {
-                "Local MCP Bridge: 0 MCP servers connected yet (add stdio or HTTP servers in Connectors -> MCP Tools).".to_string()
+                "Local MCP Bridge: 0 MCP servers connected yet (install any app in Plugins or add servers in Connectors).".to_string()
             } else {
                 let list: Vec<String> = tools.iter().map(|(n, _, _)| n.clone()).collect();
                 format!("Enabled MCP tools ({}): {}", list.len(), list.join(", "))
             }
         }
         ("github", "list_issues") => {
-            "GitHub local plugin ready; connect a GitHub outbound connector in Connectors to query live remote repositories.".to_string()
+            "GitHub local plugin ready; connect GitHub in Plugins or Connectors to query live repositories.".to_string()
         }
         _ => {
             format!(
@@ -1551,7 +976,7 @@ pub fn settle_plugin_action_decision(cfg: &Config, decision: &Value, approved: b
     let plugin_id = decision["plugin_id"].as_str().unwrap_or("");
     let action = decision["action"].as_str().unwrap_or("");
     let args = &decision["args"];
-    match crate::plugin_cloud::execute_native_cloud_action(cfg, plugin_id, action, args) {
+    match plugin_cloud::execute_native_cloud_action(cfg, plugin_id, action, args) {
         Ok(Some(out)) => {
             return format!("Approved & executed {plugin_name} · {action_label}: {out}");
         }
@@ -1582,7 +1007,13 @@ pub fn settle_plugin_action_decision(cfg: &Config, decision: &Value, approved: b
             }
         }
     }
+    let linked_mcp = decision["linked_mcp_server_id"].as_str().unwrap_or("");
+    if !linked_mcp.is_empty() {
+        return format!(
+            "Approved {plugin_name} · {action_label} on installed server '{linked_mcp}'."
+        );
+    }
     format!(
-        "Approved {plugin_name} · {action_label} (connect live OAuth2 credentials in Connectors to dispatch externally)."
+        "Approved {plugin_name} · {action_label} (connect live credentials in Plugins or Connectors to dispatch externally)."
     )
 }

@@ -80,7 +80,46 @@ import { relTime, threadMs } from "@/lib/words";
 import { instant, sheet } from "@/motion";
 
 type Face = "chat" | "paper" | "graph";
+export type UiMode = "simple" | "advanced";
 const THREADS_PAGE_SIZE = 12;
+
+function readStoredUiMode(): UiMode {
+  try {
+    const q = new URLSearchParams(window.location.search).get("mode");
+    if (q === "advanced") return "advanced";
+    if (q === "simple") return "simple";
+    const saved = localStorage.getItem("ergon-ui-mode");
+    if (saved === "advanced" || saved === "simple") return saved;
+  } catch { /* ignore */ }
+  return "simple";
+}
+
+function useUiMode(): [UiMode, (m: UiMode) => void] {
+  const [uiMode, setUiMode] = useState<UiMode>(readStoredUiMode);
+
+  useEffect(() => {
+    document.documentElement.dataset.uiMode = uiMode;
+  }, [uiMode]);
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== null && e.key !== "ergon-ui-mode") return;
+      setUiMode(readStoredUiMode());
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  const set = useCallback((next: UiMode) => {
+    setUiMode(next);
+    document.documentElement.dataset.uiMode = next;
+    try {
+      localStorage.setItem("ergon-ui-mode", next);
+    } catch { /* ignore */ }
+  }, []);
+
+  return [uiMode, set];
+}
 
 function readStoredTheme(): Theme {
   try {
@@ -225,15 +264,20 @@ function WorkspaceApp({
   auth,
   theme,
   setTheme,
+  uiMode,
+  setUiMode,
   onSignOut,
   onRefreshAuth,
 }: {
   auth: AuthMePayload | null;
   theme: Theme;
   setTheme: (t: Theme) => void;
+  uiMode: UiMode;
+  setUiMode: (m: UiMode) => void;
   onSignOut: () => Promise<void>;
   onRefreshAuth: () => Promise<void>;
 }) {
+  const simpleMode = uiMode === "simple";
   const isAdminOrLegacy = !auth?.auth_required || Boolean(auth?.user?.is_admin);
   const desk = useErgon({
     authRequired: Boolean(auth?.auth_required),
@@ -276,7 +320,14 @@ function WorkspaceApp({
   const [viewerPath, setViewerPath] = useState<string | null>(null);
   const [threadFilter, setThreadFilter] = useState("");
   const [threadPage, setThreadPage] = useState(0);
-  const [routinesExpanded, setRoutinesExpanded] = useState(true);
+  const [routinesExpanded, setRoutinesExpanded] = useState(false);
+  const [showSearchInSimple, setShowSearchInSimple] = useState(false);
+
+  useEffect(() => {
+    if (simpleMode && face === "graph") {
+      setFace("chat");
+    }
+  }, [simpleMode, face]);
 
   const [graphSeed, setGraphSeed] = useState(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -496,6 +547,7 @@ function WorkspaceApp({
         ev.preventDefault();
         if (!railOpen) setRailOpen(true);
         if (window.innerWidth < 768) setMobileOpen(true);
+        setShowSearchInSimple(true);
         requestAnimationFrame(() => searchRef.current?.focus());
       }
     };
@@ -590,6 +642,8 @@ function WorkspaceApp({
           ? "Setup needed"
           : "Ready";
 
+  const showSearch = !simpleMode || threadList.length > 4 || threadFilter.length > 0 || showSearchInSimple;
+
   const renderRailContent = () => (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 flex-col gap-2.5 p-3">
@@ -610,34 +664,36 @@ function WorkspaceApp({
           </Button>
         </div>
 
-        <div className="relative flex items-center">
-          <Search className="pointer-events-none absolute left-2.5 size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
-          <Input
-            ref={searchRef}
-            id="chat-search"
-            value={threadFilter}
-            onChange={(e) => setThreadFilter(e.target.value)}
-            placeholder="Filter conversations (/)"
-            aria-label="Filter conversations"
-            className="h-9 border-input bg-surface pl-8 pr-8 text-sm max-md:min-h-11"
-          />
-          {threadFilter && (
-            <button
-              type="button"
-              aria-label="Clear conversation filter"
-              onClick={() => setThreadFilter("")}
-              className="focus-ring absolute right-1.5 grid size-7 place-items-center rounded-sm text-icon hover:bg-board hover:text-ink"
-            >
-              <X className="size-3.5" strokeWidth={1.5} aria-hidden />
-            </button>
-          )}
-        </div>
+        {showSearch && (
+          <div className="relative flex items-center">
+            <Search className="pointer-events-none absolute left-2.5 size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
+            <Input
+              ref={searchRef}
+              id="chat-search"
+              value={threadFilter}
+              onChange={(e) => setThreadFilter(e.target.value)}
+              placeholder={simpleMode ? "Find a conversation…" : "Filter conversations (/)"}
+              aria-label="Filter conversations"
+              className="h-9 border-input bg-surface pl-8 pr-8 text-sm max-md:min-h-11"
+            />
+            {threadFilter && (
+              <button
+                type="button"
+                aria-label="Clear conversation filter"
+                onClick={() => setThreadFilter("")}
+                className="focus-ring absolute right-1.5 grid size-7 place-items-center rounded-sm text-icon hover:bg-board hover:text-ink"
+              >
+                <X className="size-3.5" strokeWidth={1.5} aria-hidden />
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <div className="flex items-center justify-between px-2 py-1">
           <span className="text-xs font-medium text-ink-3">Conversations</span>
-          {threadList.length > 0 && (
+          {!simpleMode && threadList.length > 0 && (
             <span className="mono text-xs text-ink-3">{filteredThreads.length}</span>
           )}
         </div>
@@ -694,7 +750,7 @@ function WorkspaceApp({
                     </span>
                     <span className="mono flex items-center gap-2 pl-4 text-xs text-ink-3">
                       {ms ? <span>{relTime(ms)}</span> : null}
-                      {typeof t.messages === "number" && (
+                      {!simpleMode && typeof t.messages === "number" && (
                         <span>{t.messages === 1 ? "1 msg" : `${t.messages} msgs`}</span>
                       )}
                     </span>
@@ -729,90 +785,94 @@ function WorkspaceApp({
           </div>
         )}
 
-        {/* Scheduled Routines Quick Drawer */}
-        <section aria-label="Scheduled routines" className="mt-3 border-t border-hairline pt-2.5">
-          <div className="flex items-center justify-between gap-1 px-1 py-1">
-            <button
-              type="button"
-              onClick={() => setRoutinesExpanded((v) => !v)}
-              className="focus-ring flex min-h-8 items-center gap-1.5 rounded-sm px-1.5 text-xs font-medium text-ink-2 hover:bg-board/60 hover:text-ink max-md:min-h-11"
-            >
-              <CalendarClock className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
-              <span>Scheduled routines</span>
-            </button>
-            <button
-              type="button"
-              data-thing="routines-btn"
-              onClick={() => {
-                setMobileOpen(false);
-                setRoutinesOpen(true);
-              }}
-              className="focus-ring min-h-8 rounded-sm px-2 text-xs text-ink-2 hover:bg-board hover:text-ink max-md:min-h-11"
-            >
-              Manage ({desk.routines.length})
-            </button>
-          </div>
-
-          {routinesExpanded && (
-            <div className="mt-1 flex flex-col gap-1 px-1">
-              {desk.routines.length === 0 ? (
-                <p className="px-2 py-1 text-xs text-ink-3">No routines scheduled yet.</p>
-              ) : (
-                desk.routines.slice(0, 3).map((rt: Routine) => (
-                  <div
-                    key={rt.id}
-                    className="flex items-center justify-between gap-1.5 rounded-sm px-2 py-1.5 hover:bg-board/60"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMobileOpen(false);
-                        setRoutinesOpen(true);
-                      }}
-                      className="focus-ring flex min-w-0 flex-1 flex-col text-left"
-                    >
-                      <span className="flex items-center gap-1.5 truncate text-xs font-medium text-ink">
-                        <span
-                          aria-hidden
-                          className={cn(
-                            "size-1.5 shrink-0 rounded-full",
-                            rt.enabled !== false ? "bg-dot-green" : "bg-ink-3"
-                          )}
-                        />
-                        <span className="truncate">{rt.name}</span>
-                      </span>
-                      <span className="mono pl-3 text-xs text-ink-3">{rt.schedule}</span>
-                    </button>
-                    <Button
-                      type="button"
-                      size="icon-xs"
-                      variant="ghost"
-                      aria-label={`Run routine ${rt.name}`}
-                      onClick={() => void desk.runRoutineNow(rt)}
-                      className="shrink-0 max-md:min-h-11 max-md:min-w-11"
-                    >
-                      <Play className="size-3 text-icon" strokeWidth={1.75} aria-hidden />
-                    </Button>
-                  </div>
-                ))
-              )}
+        {/* Scheduled Routines Quick Drawer (Advanced workbench) */}
+        {!simpleMode && (
+          <section aria-label="Scheduled routines" className="mt-3 border-t border-hairline pt-2.5">
+            <div className="flex items-center justify-between gap-1 px-1 py-1">
+              <button
+                type="button"
+                onClick={() => setRoutinesExpanded((v) => !v)}
+                className="focus-ring flex min-h-8 items-center gap-1.5 rounded-sm px-1.5 text-xs font-medium text-ink-2 hover:bg-board/60 hover:text-ink max-md:min-h-11"
+              >
+                <CalendarClock className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
+                <span>Scheduled routines</span>
+              </button>
+              <button
+                type="button"
+                data-thing="routines-btn"
+                onClick={() => {
+                  setMobileOpen(false);
+                  setRoutinesOpen(true);
+                }}
+                className="focus-ring min-h-8 rounded-sm px-2 text-xs text-ink-2 hover:bg-board hover:text-ink max-md:min-h-11"
+              >
+                Manage ({desk.routines.length})
+              </button>
             </div>
-          )}
-        </section>
+
+            {routinesExpanded && (
+              <div className="mt-1 flex flex-col gap-1 px-1">
+                {desk.routines.length === 0 ? (
+                  <p className="px-2 py-1 text-xs text-ink-3">No routines scheduled yet.</p>
+                ) : (
+                  desk.routines.slice(0, 3).map((rt: Routine) => (
+                    <div
+                      key={rt.id}
+                      className="flex items-center justify-between gap-1.5 rounded-sm px-2 py-1.5 hover:bg-board/60"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMobileOpen(false);
+                          setRoutinesOpen(true);
+                        }}
+                        className="focus-ring flex min-w-0 flex-1 flex-col text-left"
+                      >
+                        <span className="flex items-center gap-1.5 truncate text-xs font-medium text-ink">
+                          <span
+                            aria-hidden
+                            className={cn(
+                              "size-1.5 shrink-0 rounded-full",
+                              rt.enabled !== false ? "bg-dot-green" : "bg-ink-3"
+                            )}
+                          />
+                          <span className="truncate">{rt.name}</span>
+                        </span>
+                        <span className="mono pl-3 text-xs text-ink-3">{rt.schedule}</span>
+                      </button>
+                      <Button
+                        type="button"
+                        size="icon-xs"
+                        variant="ghost"
+                        aria-label={`Run routine ${rt.name}`}
+                        onClick={() => void desk.runRoutineNow(rt)}
+                        className="shrink-0 max-md:min-h-11 max-md:min-w-11"
+                      >
+                        <Play className="size-3 text-icon" strokeWidth={1.75} aria-hidden />
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </section>
+        )}
       </div>
 
       <div className="flex shrink-0 flex-col gap-0.5 border-t border-hairline p-2">
-        <RailPanelButton
-          id="skills-btn"
-          label="Workflows"
-          icon={<Sparkles className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
-          count={desk.skills.length}
-          onClick={() => {
-            setMobileOpen(false);
-            setSkillsOpen(true);
-          }}
-        />
-        {isAdminOrLegacy && (
+        {!simpleMode && (
+          <RailPanelButton
+            id="skills-btn"
+            label="Workflows"
+            icon={<Sparkles className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+            count={desk.skills.length}
+            onClick={() => {
+              setMobileOpen(false);
+              setSkillsOpen(true);
+            }}
+          />
+        )}
+        {!simpleMode && isAdminOrLegacy && (
           <RailPanelButton
             id="connectors-btn"
             label="Connectors"
@@ -825,7 +885,7 @@ function WorkspaceApp({
         )}
         <RailPanelButton
           id="plugins-btn"
-          label="Plugins"
+          label="Connected apps"
           icon={<Blocks className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
           count={pluginsCount}
           onClick={() => {
@@ -833,28 +893,30 @@ function WorkspaceApp({
             setPluginsOpen(true);
           }}
         />
-        <RailPanelButton
-          id="memory-btn"
-          label="What my agent has learned"
-          icon={<BookOpen className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
-          count={desk.learnedCount}
-          issueCount={desk.memoryHealth?.issue_count ?? 0}
-          onClick={() => {
-            setMobileOpen(false);
-            setLearnedOpen(true);
-          }}
-        />
+        {!simpleMode && (
+          <RailPanelButton
+            id="memory-btn"
+            label="What my agent has learned"
+            icon={<BookOpen className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
+            count={desk.learnedCount}
+            issueCount={desk.memoryHealth?.issue_count ?? 0}
+            onClick={() => {
+              setMobileOpen(false);
+              setLearnedOpen(true);
+            }}
+          />
+        )}
         <RailPanelButton
           id="suite-btn"
-          label="My suite"
+          label={simpleMode ? "My tools" : "My suite"}
           icon={<Blocks className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
-          count={desk.suiteCount}
+          count={simpleMode && desk.suiteCount === 0 ? undefined : desk.suiteCount}
           onClick={() => {
             setMobileOpen(false);
             setSuiteOpen(true);
           }}
         />
-        {isAdminOrLegacy && (
+        {!simpleMode && isAdminOrLegacy && (
           <RailPanelButton
             id="add-person-btn"
             label="Add a person"
@@ -868,7 +930,7 @@ function WorkspaceApp({
         <RailPanelButton
           id="help-btn"
           domId="help-btn"
-          label="Help & support"
+          label={simpleMode ? "Help" : "Help & support"}
           icon={<HelpCircle className="size-3.5 shrink-0 text-icon" strokeWidth={1.5} aria-hidden />}
           expanded={helpOpen}
           onClick={() => {
@@ -885,6 +947,20 @@ function WorkspaceApp({
             setSettingsOpen(true);
           }}
         />
+        <div className="my-1 border-t border-hairline pt-1">
+          <button
+            id="ui-mode-toggle"
+            data-thing="ui-mode-toggle"
+            type="button"
+            onClick={() => setUiMode(simpleMode ? "advanced" : "simple")}
+            className="focus-ring flex min-h-11 w-full items-center justify-between gap-2 rounded-sm px-2 text-left text-xs text-ink-2 outline-none hover:bg-board hover:text-ink md:min-h-8"
+          >
+            <span>{simpleMode ? "Advanced mode" : "Simple mode"}</span>
+            <span className="rounded-chip border border-hairline bg-board/60 px-1.5 py-0.5 text-xs text-ink-2">
+              {simpleMode ? "Simple" : "Advanced"}
+            </span>
+          </button>
+        </div>
         {auth?.authenticated && auth.user && (
           <RailPanelButton
             id="sign-out-btn"
@@ -896,9 +972,11 @@ function WorkspaceApp({
             }}
           />
         )}
-        <div className="pt-1">
-          <VersionRow u={u} />
-        </div>
+        {(!simpleMode || u.snap?.available || u.snap?.staged) && (
+          <div className="pt-1">
+            <VersionRow u={u} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1018,6 +1096,7 @@ function WorkspaceApp({
             active={activePersonId}
             activeClient={activeClient}
             activeEngagement={activeEngagement}
+            compact={simpleMode}
             disabled={desk.busy}
             expanded={switcherOpen}
             onOpen={() => setSwitcherOpen(true)}
@@ -1044,22 +1123,26 @@ function WorkspaceApp({
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="graph" data-id="graph" className="max-md:min-h-11 flex-1 sm:flex-initial">Work graph</TabsTrigger>
+            {!simpleMode && (
+              <TabsTrigger value="graph" data-id="graph" className="max-md:min-h-11 flex-1 sm:flex-initial">Work graph</TabsTrigger>
+            )}
           </TabsList>
         </Tabs>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
-            aria-label="Open command palette"
-            onClick={() => setPaletteOpen(true)}
-            className="hidden gap-1.5 sm:inline-flex"
-          >
-            <CommandIcon className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
-            <span>Commands</span>
-          </Button>
+          {!simpleMode && (
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              aria-label="Open command palette"
+              onClick={() => setPaletteOpen(true)}
+              className="hidden gap-1.5 sm:inline-flex"
+            >
+              <CommandIcon className="size-3.5 text-icon" strokeWidth={1.5} aria-hidden />
+              <span>Commands</span>
+            </Button>
+          )}
           <Button
             type="button"
             size="xs"
@@ -1076,7 +1159,7 @@ function WorkspaceApp({
           >
             <FolderOpen className="size-3.5 text-icon sm:hidden" strokeWidth={1.5} aria-hidden />
             <PanelRight className="hidden size-3.5 text-icon sm:block" strokeWidth={1.5} aria-hidden />
-            <span className="hidden sm:inline">Workspace</span>
+            <span className="hidden sm:inline">{simpleMode ? "Files" : "Workspace"}</span>
             <span className="mono rounded-chip bg-track px-1.5 py-0.5 text-xs text-ink-2">
               {desk.files.length}
             </span>
@@ -1111,9 +1194,13 @@ function WorkspaceApp({
                   const running =
                     desk.liveTimeline.find((s) => s.status === "running") ??
                     desk.liveTimeline[desk.liveTimeline.length - 1];
-                  if (readinessState === "Busy" && running?.plugin_name) {
-                    const tag = running.mode === "cloud" ? "Cloud" : "Local";
-                    return `${running.plugin_name} (${tag})`;
+                  if (readinessState === "Busy") {
+                    if (running?.plugin_name) {
+                      if (simpleMode) return running.plugin_name;
+                      const tag = running.mode === "cloud" ? "Cloud" : "Local";
+                      return `${running.plugin_name} (${tag})`;
+                    }
+                    return simpleMode ? "Working…" : readinessState;
                   }
                   return readinessState;
                 })()}
@@ -1149,7 +1236,7 @@ function WorkspaceApp({
                         <div className="truncate font-medium text-ink">
                           {step.plugin_name ? `${step.plugin_name} · ${step.label || step.tool}` : step.label || step.tool}
                         </div>
-                        <div className="mono text-[11px] text-ink-3">
+                        <div className="mono text-xs text-ink-3">
                           {step.status === "running"
                             ? "running now"
                             : step.status === "waiting"
@@ -1159,7 +1246,7 @@ function WorkspaceApp({
                         </div>
                       </div>
                       {step.mode && (
-                        <span className="shrink-0 rounded-chip border border-hairline bg-surface px-1.5 py-0.5 text-[10px] font-medium uppercase text-ink-2">
+                        <span className="shrink-0 rounded-chip border border-hairline bg-surface px-1.5 py-0.5 text-xs font-medium text-ink-2">
                           {step.mode}
                         </span>
                       )}
@@ -1257,6 +1344,8 @@ function WorkspaceApp({
               onCompleteOnboarding={() => void handleCompleteOnboarding()}
               onOpenSkills={() => setSkillsOpen(true)}
               onOpenHelp={() => setHelpOpen(true)}
+              onOpenOnboardingModal={() => setOnboardingModalOpen(true)}
+              uiMode={uiMode}
               inputRef={inputRef}
             />
           )}
@@ -1627,6 +1716,7 @@ function WorkspaceApp({
         open={pluginsOpen}
         onOpenChange={setPluginsOpen}
         canManageConnectors={isAdminOrLegacy}
+        uiMode={uiMode}
         onOpenConnectors={() => setConnectorsOpen(true)}
         onChanged={(n) => setPluginsCount(n)}
       />
@@ -1636,6 +1726,8 @@ function WorkspaceApp({
       <SettingsPanel
         theme={theme}
         onTheme={setTheme}
+        uiMode={uiMode}
+        onUiMode={setUiMode}
         status={desk.status}
         auth={auth}
         onSignOut={onSignOut}
@@ -1726,6 +1818,7 @@ function WorkspaceApp({
 
 export function App() {
   const [theme, setTheme] = useTheme();
+  const [uiMode, setUiMode] = useUiMode();
   const [auth, setAuth] = useState<AuthMePayload | null>(null);
   const [authLoading, setAuthLoading] = useState(!isWebStandalone());
 
@@ -1785,6 +1878,8 @@ export function App() {
       auth={auth}
       theme={theme}
       setTheme={setTheme}
+      uiMode={uiMode}
+      setUiMode={setUiMode}
       onSignOut={handleSignOut}
       onRefreshAuth={refreshAuth}
     />

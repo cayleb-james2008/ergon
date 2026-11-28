@@ -44,6 +44,7 @@ export function PersonSelect({
   active,
   activeClient,
   activeEngagement,
+  compact = false,
   disabled,
   expanded,
   onOpen,
@@ -52,6 +53,7 @@ export function PersonSelect({
   active: string;
   activeClient?: Client | null;
   activeEngagement?: Engagement | null;
+  compact?: boolean;
   disabled: boolean;
   expanded?: boolean;
   onOpen: () => void;
@@ -60,8 +62,9 @@ export function PersonSelect({
   const current = safePeople.find((p) => p.id === active);
   const currentName = current ? (String(current.name ?? "").trim() || "Unnamed") : "Choose a workspace";
   const currentRole = current ? String(current.role ?? "").trim() : "";
-  const subLabel =
-    activeClient && activeEngagement
+  const subLabel = compact
+    ? currentRole
+    : activeClient && activeEngagement
       ? `${activeClient.name} / ${activeEngagement.name}`
       : activeEngagement
         ? activeEngagement.name

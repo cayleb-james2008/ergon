@@ -247,6 +247,67 @@ export function toolLabel(tool: string, via: string | undefined, body: string): 
   return label;
 }
 
+/** Human-friendly active or completed narration for live runs ("watch magic happen"). */
+export function liveStepNarration(
+  tool: string,
+  raw?: string,
+  pluginName?: string,
+  status?: string
+): string {
+  const cleanTool = String(tool || "").trim();
+  const safeRaw = String(raw || "");
+  const body = safeRaw.includes("\n") ? safeRaw.slice(safeRaw.indexOf("\n") + 1) : safeRaw;
+  const isRunning = status === "running";
+  if (isRunning) {
+    if (pluginName) return `Working with ${pluginName}…`;
+    switch (cleanTool) {
+      case "list_dir":
+        return "Looking through your files…";
+      case "read_file":
+        return "Reading your file…";
+      case "search_files":
+        return "Searching your workspace…";
+      case "reconcile_ledger":
+        return "Checking totals and flagging issues…";
+      case "make_spreadsheet":
+        return "Building your spreadsheet…";
+      case "write_document":
+        return "Drafting your document…";
+      case "audit_contract":
+        return "Reviewing clauses and risks…";
+      case "summarize_meeting":
+        return "Summarizing meeting notes and action items…";
+      case "triage_inbox":
+        return "Sorting messages by priority…";
+      case "clean_dataset":
+        return "Cleaning and deduplicating rows…";
+      case "compare_documents":
+        return "Comparing documents side by side…";
+      case "draft_brief":
+        return "Putting your brief together…";
+      case "extract_tables":
+        return "Pulling out tables cleanly…";
+      case "run_plugin_action":
+        return "Running connected app…";
+      case "invoke_connector":
+        return "Preparing external delivery…";
+      default:
+        return "Working on the next step…";
+    }
+  }
+  const doneLabel = cleanTool ? toolLabel(cleanTool, undefined, body) : null;
+  if (doneLabel) return doneLabel;
+  if (pluginName) return `Finished ${pluginName} step`;
+  return safeRaw.trim() || "Completed step";
+}
+
+export function friendlyModeLabel(mode?: string): string {
+  if (mode === "local") return "On this device";
+  if (mode === "hybrid") return "Cloud + offline";
+  if (mode === "cloud") return "Cloud";
+  return "";
+}
+
 /** The workspace-relative file a save step wrote. */
 export function savedFile(tool: string, body: string): string {
   const re = tool === "write_document" ? /^wrote document (.+?) \(/

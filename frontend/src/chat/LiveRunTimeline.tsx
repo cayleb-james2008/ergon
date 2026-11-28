@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { BorderTrail } from "@/components/ui/border-trail";
 import { TextShimmer } from "@/components/ui/text-shimmer";
 import type { LiveRun, LiveRunStep, PipelineChildItemState } from "@/lib/api";
-import { toolLabel } from "@/lib/words";
+import { friendlyModeLabel, liveStepNarration, toolLabel } from "@/lib/words";
 
 const MAX_TOKEN_PREVIEW_CHARS = 1000;
 const MAX_CHILD_ITEMS_PER_STEP = 50;
@@ -66,6 +66,7 @@ export function LiveRunTimeline({
   onCancelRun,
   streamError,
   onRetrySync,
+  uiMode = "simple",
 }: {
   steps: LiveRunStep[];
   elapsedMs: number;
@@ -79,7 +80,9 @@ export function LiveRunTimeline({
   onCancelRun?: (runId: string) => void | Promise<void>;
   streamError?: string;
   onRetrySync?: () => void | Promise<void>;
+  uiMode?: "simple" | "advanced";
 }) {
+  const simpleMode = uiMode === "simple";
   const [tokenPreviewByRun, setTokenPreviewByRun] = useState<Record<string, string>>({});
   const [childItemsByKey, setChildItemsByKey] = useState<Record<string, PipelineChildItemState[]>>({});
   const [retryingSync, setRetryingSync] = useState(false);
@@ -259,6 +262,12 @@ export function LiveRunTimeline({
       {normalizedRuns.map((run, runIdx) => {
         const runSteps = run.steps as LiveRunStep[];
         const runningBranches = runSteps.filter((st) => st.status === "running").length;
+        const activeStep = runSteps.find((st) => st.status === "running");
+        const doneStepsCount = runSteps.filter((st) => st.status === "done").length;
+        const progressPct =
+          runSteps.length === 0
+            ? 14
+            : Math.min(96, Math.max(18, Math.round(((doneStepsCount + (runningBranches > 0 ? 0.5 : 0)) / Math.max(runSteps.length, 1)) * 100)));
         const isRunCancelling =
           Boolean(cancellingRunIds?.[run.run_id]) || (runIdx === 0 && cancelling && normalizedRuns.length === 1);
         const tokenPreview =
@@ -266,9 +275,18 @@ export function LiveRunTimeline({
           (normalizedRuns.length === 1
             ? tokenPreviewByRun.__default__ || Object.values(tokenPreviewByRun)[0] || ""
             : "");
-        const displayTitle =
+        const baseTitle =
           run.routine_name ||
           (run.task && run.task !== "Active run" ? run.task : "Agent is working on it");
+        const displayTitle = simpleMode
+          ? activeStep
+            ? liveStepNarration(activeStep.tool, activeStep.raw, activeStep.plugin_name, "running")
+            : runSteps.length > 0 && doneStepsCount === runSteps.length
+              ? "Putting your answer together…"
+              : run.task && run.task !== "Active run" && run.task !== "Agent is working on it"
+                ? run.task
+                : "Working on your request…"
+          : baseTitle;
         const sourceBadge =
           run.kind === "routine" || run.routine_id
             ? "Scheduled"
@@ -284,6 +302,12 @@ export function LiveRunTimeline({
             data-live-run={run.run_id}
             className={runIdx > 0 ? "flex min-w-0 flex-col gap-2.5 border-t border-hairline pt-3" : "flex min-w-0 flex-col gap-2.5"}
           >
+            <div aria-hidden className="h-0.5 w-full overflow-hidden rounded-full bg-track">
+              <div
+                className="h-full w-full origin-left rounded-full bg-blue motion-safe:transition-transform motion-safe:duration-300"
+                style={{ transform: `scaleX(${(progressPct / 100).toFixed(3)})` }}
+              />
+            </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="pulse-dot size-2.5 shrink-0 rounded-full bg-blue" aria-hidden />
@@ -303,7 +327,11 @@ export function LiveRunTimeline({
                 )}
                 {runIdx === 0 && streamMode && (
                   <span className="rounded-chip bg-track px-2 py-0.5 text-xs text-ink-2">
-                    {streamMode.toUpperCase()}
+                    {simpleMode
+                      ? streamMode === "sse"
+                        ? "Live"
+                        : "Syncing"
+                      : streamMode.toUpperCase()}
                   </span>
                 )}
                 {runningBranches > 1 && (
@@ -348,6 +376,10 @@ export function LiveRunTimeline({
                     (st.id ? childItemsByKey[`${run.run_id}:${st.id}`] ?? childItemsByKey[st.id] : undefined);
                   const childTotal = childItems?.length ?? 0;
                   const childDone = childItems?.filter((c) => c.status === "ok").length ?? 0;
+                  const stepText = simpleMode
+                    ? liveStepNarration(st.tool, st.label || st.raw, st.plugin_name, st.status)
+                    : st.label || toolLabel(st.tool, undefined, st.raw) || st.raw;
+                  const appBadge = st.plugin_name || (simpleMode ? friendlyModeLabel(st.mode) : "");
                   return (
                     <li key={(st.id || "step") + idx} className="flex min-w-0 items-center justify-between gap-2">
                       <span className="flex min-w-0 items-center gap-2 text-ink">
@@ -358,7 +390,12 @@ export function LiveRunTimeline({
                         ) : (
                           <span className="pulse-dot size-2 shrink-0 rounded-full bg-blue" aria-hidden />
                         )}
-                        <span className="truncate">{st.label || toolLabel(st.tool, undefined, st.raw) || st.raw}</span>
+                        <span className="truncate">{stepText}</span>
+                        {simpleMode && appBadge && (
+                          <span className="shrink-0 rounded-chip border border-hairline bg-board/60 px-2 py-0.5 text-xs text-ink-2">
+                            {appBadge}
+                          </span>
+                        )}
                         {childTotal > 0 && (
                           <span className="mono shrink-0 rounded-chip border border-hairline bg-board/60 px-1.5 py-0.5 text-xs text-ink-2">
                             {childDone}/{childTotal}
@@ -378,7 +415,11 @@ export function LiveRunTimeline({
               <div
                 id={runIdx === 0 ? "live-token-delta-preview" : undefined}
                 data-live-token-delta="true"
-                className="max-h-32 overflow-y-auto border-t border-hairline pt-2.5 text-xs leading-5 text-ink-2 whitespace-pre-wrap break-words"
+                className={
+                  simpleMode
+                    ? "max-h-40 overflow-y-auto border-t border-hairline pt-2.5 text-sm leading-6 text-ink whitespace-pre-wrap break-words"
+                    : "max-h-32 overflow-y-auto border-t border-hairline pt-2.5 text-xs leading-5 text-ink-2 whitespace-pre-wrap break-words"
+                }
               >
                 {tokenPreview}
               </div>

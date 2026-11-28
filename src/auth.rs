@@ -311,6 +311,13 @@ pub fn route_access(method: &str, path: &str) -> RouteAccess {
         ("PUT" | "POST", "/api/plugins/oauth/apps") => RouteAccess::RequireAdmin,
         ("GET" | "POST", "/api/plugins/oauth/start") => RouteAccess::AuthenticatedSelf,
         ("POST", "/api/plugins/oauth/disconnect") => RouteAccess::AuthenticatedSelf,
+        ("GET", "/api/plugins/registry" | "/api/plugins/registry/search") => {
+            RouteAccess::AuthenticatedSelf
+        }
+        ("POST", "/api/plugins/registry/sync" | "/api/plugins/registry/install" | "/api/plugins/registry/uninstall") => {
+            RouteAccess::AuthenticatedSelf
+        }
+        ("PUT" | "POST", "/api/plugins/registry/config") => RouteAccess::RequireAdmin,
 
         // Admin-only auth & identity management
         (_, p) if p == "/api/auth/users" || p.starts_with("/api/auth/users/") => {

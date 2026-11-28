@@ -102,6 +102,8 @@ export function Chat({
   onCompleteOnboarding,
   onOpenSkills,
   onOpenHelp,
+  onOpenOnboardingModal,
+  uiMode = "simple",
   inputRef,
 }: {
   threadId: string | null;
@@ -160,8 +162,12 @@ export function Chat({
   onCompleteOnboarding?: () => void;
   onOpenSkills?: () => void;
   onOpenHelp?: () => void;
+  onOpenOnboardingModal?: () => void;
+  uiMode?: "simple" | "advanced";
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
+  const simpleMode = uiMode === "simple";
+  const firstName = String(personName || "").trim().split(/\s+/)[0] || "there";
   const bottomRef = useRef<HTMLDivElement>(null);
   const attachRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -598,7 +604,12 @@ export function Chat({
           )}
         </div>
       )}
-      <div className="flex flex-col gap-2 rounded-dialog border border-hairline bg-board/45 p-2.5 shadow-card motion-safe:transition-[border-color] motion-safe:duration-(--dur-reveal) motion-safe:ease-(--ease-house)">
+      <div
+        className={cn(
+          "flex flex-col gap-2 border border-hairline bg-board/45 p-2.5 shadow-card motion-safe:transition-[border-color] motion-safe:duration-(--dur-reveal) motion-safe:ease-(--ease-house)",
+          simpleMode ? "rounded-2xl bg-surface p-3" : "rounded-dialog"
+        )}
+      >
         <Textarea
           ref={inputRef}
           id="composer-input"
@@ -613,7 +624,11 @@ export function Chat({
               if (!busy && draft.trim()) onSend();
             }
           }}
-          placeholder="Describe a task in plain words: write a report, spreadsheet, or audit…"
+          placeholder={
+            simpleMode
+              ? "Just ask in plain English — clean up a spreadsheet, draft a document, review a contract…"
+              : "Describe a task in plain words: write a report, spreadsheet, or audit…"
+          }
           aria-label="Describe a task for your agent"
           className="min-h-14 resize-none rounded-xl border border-input bg-surface px-1.5 py-1 text-ui leading-6 text-ink"
         />
@@ -641,7 +656,9 @@ export function Chat({
               Attach files
             </Button>
             {empty && (
-              <span className="hidden text-xs text-ink-3 sm:inline">Drop spreadsheets or documents anywhere</span>
+              <span className="hidden text-xs text-ink-3 sm:inline">
+                {simpleMode ? "Drop any file anywhere" : "Drop spreadsheets or documents anywhere"}
+              </span>
             )}
           </div>
           <Button
@@ -679,7 +696,8 @@ export function Chat({
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
         <div
           className={cn(
-            "mx-auto flex w-full max-w-[740px] flex-col",
+            "mx-auto flex w-full flex-col",
+            simpleMode && empty ? "max-w-[680px]" : "max-w-[740px]",
             empty ? "min-h-full justify-center gap-6 py-4" : "gap-5"
           )}
         >
@@ -693,28 +711,67 @@ export function Chat({
                   <ErgonMark className="size-5" />
                 </span>
                 <p className="text-xs font-medium text-ink-2" aria-label={`Working for ${personName}`}>
-                  Working for {personName}{role ? ` (${role})` : ""}
+                  {simpleMode
+                    ? `Hi ${firstName}`
+                    : `Working for ${personName}${role ? ` (${role})` : ""}`}
                 </p>
                 <h1 className="text-[24px] leading-8 font-medium tracking-[-0.02em] text-ink sm:text-[28px] sm:leading-9">
-                  What would you like finished today?
+                  {simpleMode ? "What can I handle for you?" : "What would you like finished today?"}
                 </h1>
               </div>
 
               {composerNode}
 
               {showOnboarding && onCompleteOnboarding && (
-                <OnboardingCard
-                  adminContact={adminContact}
-                  saving={onboardingSaving}
-                  onComplete={onCompleteOnboarding}
-                  onOpenFiles={onOpenFiles}
-                  onOpenSkills={onOpenSkills}
-                  onOpenHelp={onOpenHelp}
-                />
+                simpleMode ? (
+                  <div
+                    id="onboarding-tip"
+                    role="status"
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-card border border-hairline bg-surface/80 px-3.5 py-2 text-xs text-ink-2"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>New here?</span>
+                      {onOpenOnboardingModal && (
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="ghost"
+                          className="h-auto px-1.5 py-0.5 font-medium text-ink underline underline-offset-2 max-md:min-h-11"
+                          onClick={onOpenOnboardingModal}
+                        >
+                          Take a 1-minute tour
+                        </Button>
+                      )}
+                    </div>
+                    <Button
+                      id="onboarding-dismiss-btn"
+                      type="button"
+                      size="xs"
+                      variant="ghost"
+                      aria-label="Dismiss quick tour tip"
+                      disabled={onboardingSaving}
+                      onClick={onCompleteOnboarding}
+                      className="max-md:min-h-11 gap-1 text-ink-2 hover:text-ink"
+                    >
+                      <span>Dismiss</span>
+                      <X className="size-3.5" strokeWidth={1.5} aria-hidden />
+                    </Button>
+                  </div>
+                ) : (
+                  <OnboardingCard
+                    adminContact={adminContact}
+                    saving={onboardingSaving}
+                    onComplete={onCompleteOnboarding}
+                    onOpenFiles={onOpenFiles}
+                    onOpenSkills={onOpenSkills}
+                    onOpenHelp={onOpenHelp}
+                  />
+                )
               )}
 
               {!busy && activeLiveRuns.length > 0 && (
                 <LiveRunTimeline
+                  uiMode={uiMode}
                   steps={liveTimeline}
                   elapsedMs={liveElapsedMs}
                   startedMs={runStartedMs}
@@ -767,11 +824,11 @@ export function Chat({
                     type="button"
                     size="xs"
                     variant="ghost"
-                    className="max-md:min-h-11 gap-1.5 text-ink-3 hover:text-ink"
+                    className="max-md:min-h-11 gap-1.5 text-ink-2 hover:text-ink"
                     onClick={onOpenFiles}
                   >
                     <FolderOpen className="size-3.5" strokeWidth={1.5} aria-hidden />
-                    Browse workspace files
+                    {simpleMode ? "Open my files" : "Browse workspace files"}
                   </Button>
                   {fileCount === 0 && (
                     <Button
@@ -779,23 +836,25 @@ export function Chat({
                       type="button"
                       size="xs"
                       variant="ghost"
-                      className="max-md:min-h-11 gap-1.5 text-ink-3 hover:text-ink"
+                      className="max-md:min-h-11 gap-1.5 text-ink-2 hover:text-ink"
                       onClick={() => void handleLoadStarterPack()}
                     >
                       <Sparkles className="size-3.5" strokeWidth={1.5} aria-hidden />
-                      Load sample workspace
+                      {simpleMode ? "Try sample files" : "Load sample workspace"}
                     </Button>
                   )}
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="ghost"
-                    className="max-md:min-h-11 gap-1.5 text-ink-3 hover:text-ink"
-                    onClick={() => void onExportAuditBundle("md")}
-                  >
-                    <FileCheck2 className="size-3.5" strokeWidth={1.5} aria-hidden />
-                    Export Audit Bundle (.md)
-                  </Button>
+                  {!simpleMode && (
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="ghost"
+                      className="max-md:min-h-11 gap-1.5 text-ink-2 hover:text-ink"
+                      onClick={() => void onExportAuditBundle("md")}
+                    >
+                      <FileCheck2 className="size-3.5" strokeWidth={1.5} aria-hidden />
+                      Export Audit Bundle (.md)
+                    </Button>
+                  )}
                 </div>
               </div>
             </>
@@ -807,6 +866,7 @@ export function Chat({
                   return (
                     <FinishedEntry
                       key={idx}
+                      uiMode={uiMode}
                       time=""
                       task={item.task}
                       steps={item.steps}
@@ -851,6 +911,7 @@ export function Chat({
 
           {(busy || (!empty && activeLiveRuns.length > 0)) && (
             <LiveRunTimeline
+              uiMode={uiMode}
               steps={liveTimeline}
               elapsedMs={liveElapsedMs}
               startedMs={runStartedMs}

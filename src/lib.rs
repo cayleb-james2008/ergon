@@ -27,6 +27,7 @@ pub mod logging;
 pub mod mcp;
 pub mod pipelines;
 pub mod plugin_cloud;
+pub mod plugin_registry;
 pub mod plugins;
 pub mod proactive_offers;
 pub mod quality_bar;
@@ -2427,9 +2428,9 @@ fn run_loop(
                     "step_index": local_steps,
                     "tool": tool,
                     "label": label,
-                    "plugin_id": activity.map(|a| a.0),
-                    "plugin_name": activity.map(|a| a.1),
-                    "mode": activity.map(|a| a.2),
+                    "plugin_id": activity.as_ref().map(|a| a.0.as_str()),
+                    "plugin_name": activity.as_ref().map(|a| a.1.as_str()),
+                    "mode": activity.as_ref().map(|a| a.2),
                     "ts_ms": records::now_millis(),
                 }),
             );
@@ -2640,9 +2641,9 @@ fn run_loop(
                     "tool": tool,
                     "ok": ok,
                     "elapsed_ms": step_elapsed_ms,
-                    "plugin_id": activity.map(|a| a.0),
-                    "plugin_name": activity.map(|a| a.1),
-                    "mode": activity.map(|a| a.2),
+                    "plugin_id": activity.as_ref().map(|a| a.0.as_str()),
+                    "plugin_name": activity.as_ref().map(|a| a.1.as_str()),
+                    "mode": activity.as_ref().map(|a| a.2),
                     "summary": truncate(&result_text, 240),
                     "files_written": newly_written,
                     "usage": step_usage_json,

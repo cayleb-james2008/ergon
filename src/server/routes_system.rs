@@ -850,9 +850,9 @@ pub(super) fn try_route_system(
             } else {
                 parsed["args"].clone()
             };
-            let plugin_name = crate::plugins::find_plugin(plugin_id)
+            let plugin_name = crate::plugins::find_plugin_for_person(&runtime.cfg.data_dir, plugin_id)
                 .map(|p| p.name)
-                .unwrap_or(plugin_id);
+                .unwrap_or_else(|| plugin_id.to_string());
             let run_id = format!("plugin-{}", records::now_millis());
             state.events.publish(
                 "tool_start",
@@ -1108,6 +1108,73 @@ pub(super) fn try_route_system(
                     )
                 }
                 Err(e) => respond_err(stream, 400, &e),
+            }
+        }
+        ("GET", "/api/plugins/registry") => {
+            respond_json(
+                stream,
+                200,
+                &crate::plugin_registry::registry_status_json(&root_cfg.data_dir),
+            )
+        }
+        ("PUT" | "POST", "/api/plugins/registry/config") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            match crate::plugin_registry::update_registry_config(
+                &root_cfg.data_dir,
+                &runtime.cfg.data_dir,
+                &parsed,
+            ) {
+                Ok(v) => respond_json(stream, 200, &v),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("POST", "/api/plugins/registry/sync") => {
+            match crate::plugin_registry::sync_registry_now(
+                &root_cfg.data_dir,
+                &runtime.cfg.data_dir,
+            ) {
+                Ok(v) => respond_json(stream, 200, &v),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("GET", "/api/plugins/registry/search") => {
+            let q = query_param(&req.query, "q").unwrap_or_default();
+            respond_json(
+                stream,
+                200,
+                &crate::plugin_registry::search_registry(
+                    &root_cfg.data_dir,
+                    &runtime.cfg.data_dir,
+                    &q,
+                ),
+            )
+        }
+        ("POST", "/api/plugins/registry/install") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            match crate::plugins::install_registry_plugin(
+                &root_cfg.data_dir,
+                &runtime.cfg.data_dir,
+                &parsed,
+            ) {
+                Ok(v) => respond_json(stream, 200, &v),
+                Err((status, msg)) => respond_err(stream, status, &msg),
+            }
+        }
+        ("POST", "/api/plugins/registry/uninstall") => {
+            let parsed: Value = match serde_json::from_slice(&req.body) {
+                Ok(v) => v,
+                Err(_) => return Some(respond_err(stream, 400, "request body is not valid JSON")),
+            };
+            let id = parsed["plugin_id"].as_str().unwrap_or("");
+            match crate::plugins::uninstall_registry_plugin(&runtime.cfg.data_dir, id) {
+                Ok(v) => respond_json(stream, 200, &v),
+                Err((status, msg)) => respond_err(stream, status, &msg),
             }
         }
         ("GET", "/api/suite") => {

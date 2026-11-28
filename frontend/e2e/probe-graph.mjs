@@ -19,6 +19,7 @@ for (const [w, scheme] of [[1440, "light"], [1440, "dark"], [1100, "light"], [90
   await p.locator('[data-thing="settings-btn"]').click();
   await p.waitForSelector('[role="dialog"]', { timeout: 4000 });
   await p.getByRole("button", { name: scheme === "dark" ? "Dark" : "Light", exact: true }).first().click();
+  await p.locator('[aria-label="Interface mode"] [data-id="advanced"]').click();
   await p.keyboard.press("Escape");
   await p.locator('[role="dialog"]').waitFor({ state: "hidden", timeout: 4000 }).catch(() => {});
   if (w < 1024 && (await p.locator('aside[aria-label="Ergon navigation"]').isVisible().catch(() => false))) {
@@ -78,6 +79,7 @@ for (const [w, scheme] of [[1440, "light"], [1440, "dark"], [1100, "light"], [90
   const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
   await p.goto(BASE);
   await p.waitForTimeout(500);
+  await p.locator("#ui-mode-toggle").click();
   await p.locator('[role="tab"][data-id="graph"]').click();
   await p.waitForSelector('svg#graph-svg', { timeout: 8000 });
   await p.waitForTimeout(150);
