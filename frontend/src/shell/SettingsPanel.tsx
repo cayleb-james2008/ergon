@@ -473,9 +473,38 @@ function SettingsBody({
                 BYOK LLM
               </SegmentedControlItem>
             </SegmentedControl>
+            <p className="text-xs text-ink-3">
+              No API keys are bundled with this demo. Default mode runs 100% locally in your browser; any BYOK key stays in tab sessionStorage only.
+            </p>
 
             {engineMode === "byok" ? (
               <form onSubmit={(e) => saveModel(e, false)} className="flex flex-col gap-2.5">
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-ink-2">Public / local presets (bring your own key or run local)</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { label: "OpenRouter Free (CORS)", url: "https://openrouter.ai/api/v1", model: "openrouter/free" },
+                      { label: "Local Ollama", url: "http://127.0.0.1:11434/v1", model: "qwen2.5:3b" },
+                      { label: "Local DSH Free Forwarder", url: "http://127.0.0.1:8789/v1", model: "deepseek-v4.1-flash-free" },
+                    ].map((preset) => (
+                      <Button
+                        key={preset.label}
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        className="max-md:min-h-11"
+                        onClick={() => {
+                          setBaseUrl(preset.url);
+                          setModelId(preset.model);
+                          setApiKey("");
+                          setErr("");
+                        }}
+                      >
+                        {preset.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
                 <div className="flex flex-col gap-1">
                   <label htmlFor="cfg-base-url" className="text-xs font-medium text-ink">OpenAI-compatible base URL</label>
                   <Input

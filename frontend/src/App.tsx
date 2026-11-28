@@ -39,6 +39,7 @@ import { PersonSelect, WorkspaceSwitcherPanel } from "@/shell/PersonSelect";
 import { AuthScreen } from "@/shell/AuthScreen";
 import type { Theme } from "@/shell/SettingsPanel";
 import { UpdateStrip, VersionRow, useUpdate } from "@/shell/Update";
+import { ErgonLogo } from "@/shell/ErgonLogo";
 
 const PaperFace = lazy(() => import("@/views/Paper"));
 const PhoneFace = lazy(() => import("@/views/Phone"));
@@ -522,7 +523,7 @@ function WorkspaceApp({
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 flex-col gap-2.5 p-3">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-medium tracking-tight text-ink">Ergon</span>
+          <ErgonLogo size="md" />
           <Button
             type="button"
             size="sm"

@@ -16,6 +16,7 @@ import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmente
 import { call, type Update } from "@/lib/api";
 import { isLocal, plainUpdateError, resultLine } from "@/lib/words";
 import { Details } from "@/chat/Entry";
+import { ErgonMark } from "@/shell/ErgonLogo";
 
 const RELEASES_URL = "https://github.com/cayleb-james2008/ergon/releases/tag/v";
 const DISMISS_KEY = "ergon-update-dismissed";
@@ -458,7 +459,9 @@ export function VersionRow({ u }: { u: U }) {
         rel="noopener"
         className="focus-ring flex min-h-11 min-w-0 flex-1 items-center gap-1.5 truncate rounded-sm px-1 text-xs text-ink-2 outline-none hover:text-ink md:min-h-8"
       >
-        <span className="mono font-medium text-ink">Ergon {u.version}</span>
+        <ErgonMark className="size-3.5 shrink-0 text-ink" />
+        <span className="sr-only">Ergon</span>
+        <span className="mono font-medium text-ink">v{u.version}</span>
         <span className="truncate">{state}</span>
         <span className="sr-only"> (opens release notes in a new tab)</span>
       </a>

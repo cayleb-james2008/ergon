@@ -30,6 +30,7 @@ import {
 import { LiveRunTimeline } from "@/chat/LiveRunTimeline";
 import { PipelineRunStrip } from "@/shell/CheckpointCard";
 import { OnboardingCard } from "@/shell/OnboardingCard";
+import { ErgonMark } from "@/shell/ErgonLogo";
 import { cn } from "@/lib/utils";
 import {
   call,
@@ -683,7 +684,13 @@ export function Chat({
         >
           {empty ? (
             <>
-              <div className="flex flex-col items-start gap-1.5 sm:items-center sm:text-center">
+              <div className="flex flex-col items-start gap-2 sm:items-center sm:text-center">
+                <span
+                  aria-hidden
+                  className="grid size-10 place-items-center rounded-card border border-hairline bg-surface text-ink shadow-card"
+                >
+                  <ErgonMark className="size-5" />
+                </span>
                 <p className="text-xs font-medium text-ink-2" aria-label={`Working for ${personName}`}>
                   Working for {personName}{role ? ` (${role})` : ""}
                 </p>

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PanelModal } from "@/shell/PanelModal";
+import { ErgonMark } from "@/shell/ErgonLogo";
 import type { AdminContactConfig } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -260,8 +261,9 @@ export function OnboardingCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h2 id="onboarding-heading" className="text-sm font-medium text-ink">
-            Welcome to Ergon — 3-step quick start
+          <h2 id="onboarding-heading" className="flex items-center gap-2 text-sm font-medium text-ink">
+            <ErgonMark className="size-4 shrink-0 text-ink" />
+            <span>Welcome to Ergon — 3-step quick start</span>
           </h2>
           <p className="mt-0.5 text-xs text-ink-2">
             A quick plain-language tour of your workspace. You can re-open this anytime from Help.

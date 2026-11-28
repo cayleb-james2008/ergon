@@ -32,6 +32,7 @@ import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmente
 import { Pill } from "@/components/kibo-ui/pill";
 import { PanelModal } from "@/shell/PanelModal";
 import { QualityBarControls, matchQualityBar } from "@/shell/QualityBarControl";
+import { ErgonMark } from "@/shell/ErgonLogo";
 import {
   addCompanyMemory,
   analyzeOffers,
@@ -636,6 +637,7 @@ export function PhoneFace({
       <header className="sticky top-0 z-30 border-b border-hairline bg-surface">
         <div className="mx-auto flex max-w-lg flex-wrap items-center justify-between gap-2 px-3 py-2">
           <div className="flex min-w-0 items-center gap-2">
+            <ErgonMark className="size-4 shrink-0 text-ink" />
             <span className="truncate text-sm font-medium text-ink">{employeeName}</span>
             <Pill variant="secondary" className="bg-track px-2 py-0.5 text-xs font-medium text-ink">
               {employeeRole}
@@ -1100,8 +1102,17 @@ export function PhoneFace({
                           : "mr-4 bg-surface text-ink"
                     )}
                   >
-                    <span className="mb-0.5 block text-xs font-medium text-ink-2">
-                      {msg.role === "user" ? "You" : msg.role === "step" ? "Step" : "Ergon"}
+                    <span className="mb-0.5 flex items-center gap-1.5 text-xs font-medium text-ink-2">
+                      {msg.role === "user" ? (
+                        "You"
+                      ) : msg.role === "step" ? (
+                        "Step"
+                      ) : (
+                        <>
+                          <ErgonMark className="size-3 text-ink" />
+                          <span>Ergon</span>
+                        </>
+                      )}
                     </span>
                     <p className="whitespace-pre-wrap">{msg.content}</p>
                   </div>

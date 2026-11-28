@@ -1,10 +1,11 @@
 // Multi-user sign-in & first-run administrator setup screen for `/` and `/phone`.
 // Uses Ergon's house-frontend tokens; Light/Dark theme stays strictly in Settings (#67).
 import { useState } from "react";
-import { KeyRound, Lock, ShieldCheck, Smartphone, UserPlus } from "lucide-react";
+import { KeyRound, ShieldCheck, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Pill } from "@/components/kibo-ui/pill";
+import { ErgonMark } from "@/shell/ErgonLogo";
 import { loginLocal, setupInitialAdmin, type AuthMePayload } from "@/lib/api";
 
 export function AuthScreen({
@@ -88,11 +89,7 @@ export function AuthScreen({
               aria-hidden
               className="grid size-9 place-items-center rounded-sm border border-hairline bg-board text-ink"
             >
-              {isSetup ? (
-                <UserPlus className="size-4" strokeWidth={1.75} />
-              ) : (
-                <Lock className="size-4" strokeWidth={1.75} />
-              )}
+              <ErgonMark className="size-5 text-ink" />
             </span>
             <div>
               <h1 className="text-base font-semibold tracking-tight text-ink">

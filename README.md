@@ -1,6 +1,11 @@
 <div align="center">
 
-# Ergon
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/ergon-logo-dark.svg" />
+    <img src="docs/brand/ergon-logo-light.svg" alt="Ergon" height="36" />
+  </picture>
+</p>
 
 **A single-binary Rust + React workforce backend and agent desk for teams.**
 
